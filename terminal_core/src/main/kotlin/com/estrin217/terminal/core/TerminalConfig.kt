@@ -4,7 +4,7 @@ import android.content.Context
 import java.io.File
 
 object TerminalConfig {
-    const val ROOTFS_ASSET_NAME = "rootfs.tar.xz"
+    const val ROOTFS_ASSET_NAME = "debian_rootfs.tar.xz"
     const val ROOTFS_DIR_NAME = "rootfs"
     const val MARKER_FILE_NAME = ".installed"
 
