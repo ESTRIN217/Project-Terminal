@@ -1,0 +1,25 @@
+🗺️ Hoja de Ruta Refinada Paso a Paso
+📦 Fase 1: Esqueleto del Proyecto y Capa Nativa (JNI)
+El objetivo aquí es preparar la estructura modular para no mezclar código UI con código nativo.
+Configuración de Gradle: Sube el SDK al 34 o 35. Configura el soporte para CMake o ndk-build en tu build.gradle para manejar los binarios de PRoot y tus componentes en C.
+Abstracción de Librerías (DRY): No reinventes la rueda con la vista. Importar terminal-view y terminal-emulator de Termux es excelente. Crea un módulo o paquete separado llamado :terminal_core para aislar estas dependencias.
+Inyección de Binarios: Coloca los ejecutables de PRoot precompilados para arm64-v8a (el estándar de los procesadores modernos) en app/src/main/jniLibs/arm64-v8a/libproot.so. Como bien dijiste, el truco del prefijo lib y la extensión .so es vital para que Android no bloquee la ejecución en el almacenamiento interno.
+🐧 Fase 2: El Rootfs y el Aislamiento de Rutas
+Aquí preparamos el verdadero entorno GNU/Linux.
+Estrategia de Extracción: El almacenamiento interno privado (/data/data/tu.paquete/files/) es el único lugar con permisos de ejecución. Escribe un manager en Kotlin (RootfsManager) encargado de verificar si el rootfs existe; si no, descomprime el .tar.xz desde los assets.
+El Truco del Enlace (Glibc Nativo): Al configurar los argumentos de PRoot, le indicarás que tu directorio raíz es la carpeta extraída. PRoot se encargará de engañar a los binarios para que crean que están en el / real de Linux, haciendo que busquen /lib/ld-linux-aarch64.so.1 dentro del entorno aislado, ignorando por completo el linker Bionic de Android.
+🔌 Fase 3: El Puente JNI y Control de TTY
+Conectar la interfaz gráfica con el proceso nativo de forma eficiente.
+Inicialización de la Terminal: La vista de Termux (TerminalView) requiere una TerminalSession. No lances el proceso directamente con un ProcessBuilder común de Java, ya que perderías el control del pseudoterminal (PTY).
+Estructura del ioctl (Tamaño de Pantalla): Debes usar el código nativo en C/C++ (a través de JNI) para abrir el descriptor de archivo del PTY.
+Crea una función nativa: private native void setTerminalSize(int fd, int rows, int cols, int widthPx, int heightPx);.
+En el lado de C, esta función llenará la estructura winsize y ejecutará ioctl(fd, TIOCSWINSZ, &ws). Esto evitará que herramientas como nano o htop se rompan al rotar la pantalla.
+🎨 Fase 4: Interfaz de Usuario (Material Design 3)
+Una terminal moderna no tiene por qué verse vieja.
+Diseño Contenedor: Diseña la barra de teclas especiales usando botones sutiles, bordes redondeados y colores tonales basados en la paleta dinámica de Material Design 3.
+Uso de Iconos: Para las acciones de la barra de herramientas (configuración, cambiar sesión, limpiar pantalla), asegúrate de usar fuentes de iconos en su variante Outlined (Línea) para mantener la consistencia visual que buscas.
+Inyección de Fuentes: Permite cambiar la tipografía de la vista mapeando archivos .ttf (como JetBrains Mono) dinámicamente en la configuración de la sesión del emulador.
+🛡️ Fase 5: Estabilización y Shizuku
+Hacer que el entorno sea inmortal y potente.
+Foreground Service Limpio: Crea un servicio independiente que maneje el ciclo de vida de las TerminalSession. Este servicio mostrará la notificación persistente obligatoria. Si la actividad de la interfaz se destruye por falta de memoria, el servicio mantendrá vivo el proceso de Linux.
+Capa Shizuku (Opcional pero Recomendada): Diseña una interfaz de conexión para Shizuku. Si está disponible, úsala para ejecutar un script inicial que desactive las restricciones de procesos en segundo plano del sistema Android, garantizando que tus servidores e hilos de compilación corran sin interrupciones.
