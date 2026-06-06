@@ -65,6 +65,10 @@ public final class TerminalSession extends TerminalOutput {
      */
     private int mTerminalFileDescriptor;
 
+    public int getTerminalFileDescriptor() {
+        return mTerminalFileDescriptor;
+    }
+
     /** Set by the application for user identification of session, not by terminal. */
     public String mSessionName;
 

@@ -8,6 +8,11 @@ class TerminalCore {
      */
     external fun stringFromJNI(): String
 
+    /**
+     * Set the terminal size using ioctl(fd, TIOCSWINSZ, &ws).
+     */
+    external fun setTerminalSize(fd: Int, rows: Int, cols: Int, widthPx: Int, heightPx: Int)
+
     companion object {
         // Used to load the 'terminal_core' library on application startup.
         init {

@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.estrin217.terminal.core"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 26 // Android 8.0 mínimo para soporte PTY decente
@@ -48,7 +48,9 @@ android {
 }
 
 dependencies {
-    // Aquí importarás las dependencias de Termux (terminal-view y terminal-emulator)
-    // mediante JitPack o clonando sus clases directamente a este módulo.
+    api(project(":terminal-emulator"))
+    api(project(":terminal-view"))
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation(libs.commons.compress)
+    implementation(libs.xz)
 }

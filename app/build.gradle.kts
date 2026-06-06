@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "com.estrin217.terminal"
-    compileSdk = 36 // Ajusta a la versión actual
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.estrin217.terminal"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
