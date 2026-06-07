@@ -5,6 +5,9 @@ import java.io.File
 
 object TerminalConfig {
     const val ROOTFS_ASSET_NAME = "debian_rootfs.tar.xz"
+    // Si se establece, RootfsManager intentará descargar este recurso remoto al iniciar.
+    // Puede apuntar a un `index.json` OCI o a un blob tar.xz directo.
+    const val ROOTFS_REMOTE_URL = "https://raw.githubusercontent.com/debuerreotype/docker-debian-artifacts/0e5fb59716bf53dcf4e817e1aa7637f3259e1d45/stable/oci/index.json"
     const val ROOTFS_DIR_NAME = "rootfs"
     const val MARKER_FILE_NAME = ".installed"
 
