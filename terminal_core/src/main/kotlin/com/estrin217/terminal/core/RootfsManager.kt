@@ -14,6 +14,7 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.zip.GZIPInputStream
+import kotlinx.coroutines.runBlocking
 
 object RootfsManager {
 
@@ -337,88 +338,8 @@ object RootfsManager {
      * Descarga la capa raíz de una imagen desde Docker Hub (registries públicas)
      */
     @Throws(IOException::class)
-    fun downloadFromDockerHub(context: Context, image: String, tag: String): File {
-        val repo = if (image.contains("/")) image else "library/$image"
-        // 1) obtener token
-        val tokenUrl = "https://auth.docker.io/token?service=registry.docker.io&scope=repository:$repo:pull"
-        val tokenConn = URL(tokenUrl).openConnection() as HttpURLConnection
-        tokenConn.connectTimeout = 15000
-        tokenConn.readTimeout = 15000
-        val tokenJson = tokenConn.inputStream.use { String(it.readBytes()) }
-        val token = JSONObject(tokenJson).optString("token")
-        if (token.isBlank()) throw IOException("Failed to obtain Docker Hub token")
-
-        // 2) obtener manifest
-        val manifestUrl = "https://registry-1.docker.io/v2/$repo/manifests/$tag"
-        val mconn = (URL(manifestUrl).openConnection() as HttpURLConnection).apply {
-            setRequestProperty("Authorization", "Bearer $token")
-            setRequestProperty("Accept", "application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json")
-            connectTimeout = 15000
-            readTimeout = 15000
-        }
-
-        val manifestText = mconn.inputStream.use { String(it.readBytes()) }
-        var manifest = JSONObject(manifestText)
-
-        var layers: JSONArray? = manifest.optJSONArray("layers")
-        if (layers == null && manifest.has("manifests")) {
-            val manifests = manifest.getJSONArray("manifests")
-            if (manifests.length() > 0) {
-                val first = manifests.getJSONObject(0)
-                val digest = first.optString("digest")
-                if (digest.isNotBlank()) {
-                    val m2url = "https://registry-1.docker.io/v2/$repo/manifests/$digest"
-                    val mconn2 = (URL(m2url).openConnection() as HttpURLConnection).apply {
-                        setRequestProperty("Authorization", "Bearer $token")
-                        setRequestProperty("Accept", "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json")
-                        connectTimeout = 15000
-                        readTimeout = 15000
-                    }
-                    val m2text = mconn2.inputStream.use { String(it.readBytes()) }
-                    manifest = JSONObject(m2text)
-                    layers = manifest.optJSONArray("layers")
-                }
-            }
-        }
-
-        if (layers == null || layers.length() == 0) {
-            throw IOException("No layers found in manifest for $repo:$tag")
-        }
-
-        // elegir la primera capa que parezca un tar
-        var chosenDigest: String? = null
-        for (i in 0 until layers.length()) {
-            val layer = layers.getJSONObject(i)
-            val media = layer.optString("mediaType")
-            val digest = layer.optString("digest")
-            if (digest.isNotBlank() && (media.contains("tar") || media.contains("gzip") || media.contains("xz") || media.contains("rootfs") || media.isBlank())) {
-                chosenDigest = digest
-                break
-            }
-        }
-
-        if (chosenDigest == null) throw IOException("No suitable layer found in manifest for $repo:$tag")
-
-        val blobUrl = "https://registry-1.docker.io/v2/$repo/blobs/$chosenDigest"
-        val outFile = File(context.cacheDir, "docker_rootfs_${repo.replace('/','_')}_$tag.bin")
-
-        val bconn = (URL(blobUrl).openConnection() as HttpURLConnection).apply {
-            setRequestProperty("Authorization", "Bearer $token")
-            connectTimeout = 15000
-            readTimeout = 120000
-        }
-
-        bconn.inputStream.use { input ->
-            FileOutputStream(outFile).use { fos ->
-                val buf = ByteArray(8192)
-                var r: Int
-                while (input.read(buf).also { r = it } != -1) {
-                    fos.write(buf, 0, r)
-                }
-            }
-        }
-
-        return outFile
+    fun downloadFromDockerHub(context: Context, image: String, tag: String): File = runBlocking {
+        DockerHubDownloader.downloadFromDockerHub(context, image, tag)
     }
 }
 
