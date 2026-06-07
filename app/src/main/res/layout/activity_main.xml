@@ -177,6 +177,48 @@
                 android:textColor="#D0BCFF"
                 android:textSize="12sp" />
 
+            <Button
+                android:id="@+id/btn_logger"
+                style="?android:attr/buttonStyleSmall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_margin="2dp"
+                android:backgroundTint="#2E2D30"
+                android:minWidth="56dp"
+                android:minHeight="40dp"
+                android:text="LOG"
+                android:textAllCaps="false"
+                android:textColor="#A8DADC"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btn_import_rootfs"
+                style="?android:attr/buttonStyleSmall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_margin="2dp"
+                android:backgroundTint="#2E2D30"
+                android:minWidth="56dp"
+                android:minHeight="40dp"
+                android:text="IMPORT"
+                android:textAllCaps="false"
+                android:textColor="#FFD166"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btn_download_rootfs"
+                style="?android:attr/buttonStyleSmall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_margin="2dp"
+                android:backgroundTint="#2E2D30"
+                android:minWidth="56dp"
+                android:minHeight="40dp"
+                android:text="DL"
+                android:textAllCaps="false"
+                android:textColor="#A8DADC"
+                android:textSize="12sp" />
+
         </LinearLayout>
     </HorizontalScrollView>
 

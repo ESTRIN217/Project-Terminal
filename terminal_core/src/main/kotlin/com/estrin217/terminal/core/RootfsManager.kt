@@ -1,6 +1,7 @@
 package com.estrin217.terminal.core
 
 import android.content.Context
+import android.net.Uri
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import org.json.JSONArray
@@ -35,40 +36,76 @@ object RootfsManager {
         }
         rootfsDir.mkdirs()
 
-        // Prepare InputStream for the rootfs archive. Prefer remote URL if configured,
-        // otherwise fall back to the bundled asset.
+        // Prepare InputStream for the rootfs archive. Strategy:
+        // 1) If a remote URL is configured, try to download and use it.
+        // 2) Try an externally provided file in the app external files dir (useful for manual installs).
+        // 3) Fall back to the bundled asset if present.
         val assetManager = context.assets
-        val rootfsInputStream = try {
-            if (TerminalConfig.ROOTFS_REMOTE_URL.isNotBlank()) {
+        val attemptedLocations = mutableListOf<String>()
+        var rootfsInputStream: BufferedInputStream? = null
+
+        // 1) Remote URL
+        if (TerminalConfig.ROOTFS_REMOTE_URL.isNotBlank()) {
+            try {
                 val downloaded = downloadRemoteRootfs(context, TerminalConfig.ROOTFS_REMOTE_URL)
-                BufferedInputStream(java.io.FileInputStream(downloaded))
-            } else {
-                BufferedInputStream(assetManager.open(TerminalConfig.ROOTFS_ASSET_NAME))
+                attemptedLocations.add("remote: ${downloaded.absolutePath}")
+                rootfsInputStream = BufferedInputStream(java.io.FileInputStream(downloaded))
+            } catch (e: Exception) {
+                // log and continue to next fallback
+                attemptedLocations.add("remote failed: ${e.message}")
             }
-        } catch (e: Exception) {
-            // Fallback to bundled asset on any failure
-            BufferedInputStream(assetManager.open(TerminalConfig.ROOTFS_ASSET_NAME))
         }
 
+        // 2) External files dir (allow user to drop the archive into app external files)
+        if (rootfsInputStream == null) {
+            try {
+                val external = File(context.getExternalFilesDir(null), TerminalConfig.ROOTFS_ASSET_NAME)
+                if (external.exists()) {
+                    attemptedLocations.add("external: ${external.absolutePath}")
+                    rootfsInputStream = BufferedInputStream(java.io.FileInputStream(external))
+                } else {
+                    attemptedLocations.add("external not found: ${external.absolutePath}")
+                }
+            } catch (e: Exception) {
+                attemptedLocations.add("external failed: ${e.message}")
+            }
+        }
+
+        // 3) Bundled asset
+        if (rootfsInputStream == null) {
+            try {
+                attemptedLocations.add("asset: ${TerminalConfig.ROOTFS_ASSET_NAME}")
+                rootfsInputStream = BufferedInputStream(assetManager.open(TerminalConfig.ROOTFS_ASSET_NAME))
+            } catch (e: Exception) {
+                attemptedLocations.add("asset failed: ${e.message}")
+            }
+        }
+
+        if (rootfsInputStream == null) {
+            throw IOException("Rootfs archive not found. Tried: ${attemptedLocations.joinToString("; ")}")
+        }
+
+        val wrappedRootfsInput = rootfsInputStream
+
         val header = ByteArray(6)
-        rootfsInputStream.mark(8192)
-        val read = rootfsInputStream.read(header)
-        rootfsInputStream.reset()
+        wrappedRootfsInput.mark(8192)
+        val read = wrappedRootfsInput.read(header)
+        wrappedRootfsInput.reset()
 
         val tarIn = when {
             read >= 6 && header[0] == 0xFD.toByte() && header[1] == 0x37.toByte() && header[2] == 0x7A.toByte() && header[3] == 0x58.toByte() && header[4] == 0x5A.toByte() && header[5] == 0x00.toByte() -> {
                 // XZ compressed
-                val xzIn = XZCompressorInputStream(rootfsInputStream)
+                val xzIn = XZCompressorInputStream(wrappedRootfsInput)
                 TarArchiveInputStream(xzIn)
             }
             read >= 2 && header[0] == 0x1F.toByte() && header[1] == 0x8B.toByte() -> {
                 // GZIP compressed
-                val gzIn = GZIPInputStream(rootfsInputStream)
+                val gzIn = GZIPInputStream(wrappedRootfsInput)
                 TarArchiveInputStream(gzIn)
             }
             else -> {
                 // Assume plain tar
-                TarArchiveInputStream(rootfsInputStream)
+                TarArchiveInputStream(wrappedRootfsInput)
             }
         }
 
@@ -219,4 +256,169 @@ object RootfsManager {
 
         return outFile
     }
+
+    @Throws(IOException::class)
+    fun installFromUri(context: Context, uri: Uri, progressCallback: (Int) -> Unit = {}) {
+        val out = File(context.getExternalFilesDir(null), TerminalConfig.ROOTFS_ASSET_NAME)
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            FileOutputStream(out).use { output ->
+                input.copyTo(output)
+            }
+        } ?: throw IOException("Unable to open selected URI")
+
+        installFromFile(context, out, progressCallback)
+    }
+
+    @Throws(IOException::class)
+    fun installFromFile(context: Context, file: File, progressCallback: (Int) -> Unit = {}) {
+        val rootfsDir = TerminalConfig.getRootfsDir(context)
+        if (rootfsDir.exists()) rootfsDir.deleteRecursively()
+        rootfsDir.mkdirs()
+
+        val input = BufferedInputStream(java.io.FileInputStream(file))
+
+        val header = ByteArray(6)
+        input.mark(8192)
+        val read = input.read(header)
+        input.reset()
+
+        val tarIn = when {
+            read >= 6 && header[0] == 0xFD.toByte() && header[1] == 0x37.toByte() && header[2] == 0x7A.toByte() && header[3] == 0x58.toByte() && header[4] == 0x5A.toByte() && header[5] == 0x00.toByte() -> {
+                val xzIn = XZCompressorInputStream(input)
+                TarArchiveInputStream(xzIn)
+            }
+            read >= 2 && header[0] == 0x1F.toByte() && header[1] == 0x8B.toByte() -> {
+                val gzIn = GZIPInputStream(input)
+                TarArchiveInputStream(gzIn)
+            }
+            else -> TarArchiveInputStream(input)
+        }
+
+        var entry = tarIn.nextEntry
+        var entryCount = 0
+
+        while (entry != null) {
+            val destFile = File(rootfsDir, entry.name)
+
+            val canonicalDest = destFile.canonicalPath
+            val canonicalRoot = rootfsDir.canonicalPath
+            if (!canonicalDest.startsWith(canonicalRoot + File.separator)) {
+                throw IOException("Security Violation: Entry path traversal detected in tar: ${entry.name}")
+            }
+
+            if (entry.isDirectory) destFile.mkdirs() else {
+                destFile.parentFile?.mkdirs()
+                FileOutputStream(destFile).use { outputStream ->
+                    tarIn.copyTo(outputStream)
+                }
+
+                val path = entry.name
+                val isExecutable = path.contains("bin/") || path.contains("sbin/") || path.contains("libexec/") || path.endsWith(".sh") || path.endsWith(".so")
+                if (isExecutable) {
+                    destFile.setExecutable(true, false)
+                    destFile.setReadable(true, false)
+                }
+            }
+
+            entryCount++
+            progressCallback(entryCount)
+            entry = tarIn.nextEntry
+        }
+
+        tarIn.close()
+
+        File(rootfsDir, "home/programador").mkdirs()
+        File(rootfsDir, "tmp").mkdirs()
+
+        TerminalConfig.getMarkerFile(context).createNewFile()
+    }
+
+    /**
+     * Descarga la capa raíz de una imagen desde Docker Hub (registries públicas)
+     */
+    @Throws(IOException::class)
+    fun downloadFromDockerHub(context: Context, image: String, tag: String): File {
+        val repo = if (image.contains("/")) image else "library/$image"
+        // 1) obtener token
+        val tokenUrl = "https://auth.docker.io/token?service=registry.docker.io&scope=repository:$repo:pull"
+        val tokenConn = URL(tokenUrl).openConnection() as HttpURLConnection
+        tokenConn.connectTimeout = 15000
+        tokenConn.readTimeout = 15000
+        val tokenJson = tokenConn.inputStream.use { String(it.readBytes()) }
+        val token = JSONObject(tokenJson).optString("token")
+        if (token.isBlank()) throw IOException("Failed to obtain Docker Hub token")
+
+        // 2) obtener manifest
+        val manifestUrl = "https://registry-1.docker.io/v2/$repo/manifests/$tag"
+        val mconn = (URL(manifestUrl).openConnection() as HttpURLConnection).apply {
+            setRequestProperty("Authorization", "Bearer $token")
+            setRequestProperty("Accept", "application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json")
+            connectTimeout = 15000
+            readTimeout = 15000
+        }
+
+        val manifestText = mconn.inputStream.use { String(it.readBytes()) }
+        var manifest = JSONObject(manifestText)
+
+        var layers: JSONArray? = manifest.optJSONArray("layers")
+        if (layers == null && manifest.has("manifests")) {
+            val manifests = manifest.getJSONArray("manifests")
+            if (manifests.length() > 0) {
+                val first = manifests.getJSONObject(0)
+                val digest = first.optString("digest")
+                if (digest.isNotBlank()) {
+                    val m2url = "https://registry-1.docker.io/v2/$repo/manifests/$digest"
+                    val mconn2 = (URL(m2url).openConnection() as HttpURLConnection).apply {
+                        setRequestProperty("Authorization", "Bearer $token")
+                        setRequestProperty("Accept", "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json")
+                        connectTimeout = 15000
+                        readTimeout = 15000
+                    }
+                    val m2text = mconn2.inputStream.use { String(it.readBytes()) }
+                    manifest = JSONObject(m2text)
+                    layers = manifest.optJSONArray("layers")
+                }
+            }
+        }
+
+        if (layers == null || layers.length() == 0) {
+            throw IOException("No layers found in manifest for $repo:$tag")
+        }
+
+        // elegir la primera capa que parezca un tar
+        var chosenDigest: String? = null
+        for (i in 0 until layers.length()) {
+            val layer = layers.getJSONObject(i)
+            val media = layer.optString("mediaType")
+            val digest = layer.optString("digest")
+            if (digest.isNotBlank() && (media.contains("tar") || media.contains("gzip") || media.contains("xz") || media.contains("rootfs") || media.isBlank())) {
+                chosenDigest = digest
+                break
+            }
+        }
+
+        if (chosenDigest == null) throw IOException("No suitable layer found in manifest for $repo:$tag")
+
+        val blobUrl = "https://registry-1.docker.io/v2/$repo/blobs/$chosenDigest"
+        val outFile = File(context.cacheDir, "docker_rootfs_${repo.replace('/','_')}_$tag.bin")
+
+        val bconn = (URL(blobUrl).openConnection() as HttpURLConnection).apply {
+            setRequestProperty("Authorization", "Bearer $token")
+            connectTimeout = 15000
+            readTimeout = 120000
+        }
+
+        bconn.inputStream.use { input ->
+            FileOutputStream(outFile).use { fos ->
+                val buf = ByteArray(8192)
+                var r: Int
+                while (input.read(buf).also { r = it } != -1) {
+                    fos.write(buf, 0, r)
+                }
+            }
+        }
+
+        return outFile
+    }
 }
+

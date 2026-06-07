@@ -1,25 +1,120 @@
-🗺️ Hoja de Ruta Refinada Paso a Paso
-📦 Fase 1: Esqueleto del Proyecto y Capa Nativa (JNI)
-El objetivo aquí es preparar la estructura modular para no mezclar código UI con código nativo.
-Configuración de Gradle: Sube el SDK al 34 o 35. Configura el soporte para CMake o ndk-build en tu build.gradle para manejar los binarios de PRoot y tus componentes en C.
-Abstracción de Librerías (DRY): No reinventes la rueda con la vista. Importar terminal-view y terminal-emulator de Termux es excelente. Crea un módulo o paquete separado llamado :terminal_core para aislar estas dependencias.
-Inyección de Binarios: Coloca los ejecutables de PRoot precompilados para arm64-v8a (el estándar de los procesadores modernos) en app/src/main/jniLibs/arm64-v8a/libproot.so. Como bien dijiste, el truco del prefijo lib y la extensión .so es vital para que Android no bloquee la ejecución en el almacenamiento interno.
-🐧 Fase 2: El Rootfs y el Aislamiento de Rutas
-Aquí preparamos el verdadero entorno GNU/Linux.
-Estrategia de Extracción: El almacenamiento interno privado (/data/data/tu.paquete/files/) es el único lugar con permisos de ejecución. Escribe un manager en Kotlin (RootfsManager) encargado de verificar si el rootfs existe; si no, descomprime el .tar.xz desde los assets.
-El Truco del Enlace (Glibc Nativo): Al configurar los argumentos de PRoot, le indicarás que tu directorio raíz es la carpeta extraída. PRoot se encargará de engañar a los binarios para que crean que están en el / real de Linux, haciendo que busquen /lib/ld-linux-aarch64.so.1 dentro del entorno aislado, ignorando por completo el linker Bionic de Android.
-🔌 Fase 3: El Puente JNI y Control de TTY
-Conectar la interfaz gráfica con el proceso nativo de forma eficiente.
-Inicialización de la Terminal: La vista de Termux (TerminalView) requiere una TerminalSession. No lances el proceso directamente con un ProcessBuilder común de Java, ya que perderías el control del pseudoterminal (PTY).
-Estructura del ioctl (Tamaño de Pantalla): Debes usar el código nativo en C/C++ (a través de JNI) para abrir el descriptor de archivo del PTY.
-Crea una función nativa: private native void setTerminalSize(int fd, int rows, int cols, int widthPx, int heightPx);.
-En el lado de C, esta función llenará la estructura winsize y ejecutará ioctl(fd, TIOCSWINSZ, &ws). Esto evitará que herramientas como nano o htop se rompan al rotar la pantalla.
-🎨 Fase 4: Interfaz de Usuario (Material Design 3)
-Una terminal moderna no tiene por qué verse vieja.
-Diseño Contenedor: Diseña la barra de teclas especiales usando botones sutiles, bordes redondeados y colores tonales basados en la paleta dinámica de Material Design 3.
-Uso de Iconos: Para las acciones de la barra de herramientas (configuración, cambiar sesión, limpiar pantalla), asegúrate de usar fuentes de iconos en su variante Outlined (Línea) para mantener la consistencia visual que buscas.
-Inyección de Fuentes: Permite cambiar la tipografía de la vista mapeando archivos .ttf (como JetBrains Mono) dinámicamente en la configuración de la sesión del emulador.
-🛡️ Fase 5: Estabilización y Shizuku
-Hacer que el entorno sea inmortal y potente.
-Foreground Service Limpio: Crea un servicio independiente que maneje el ciclo de vida de las TerminalSession. Este servicio mostrará la notificación persistente obligatoria. Si la actividad de la interfaz se destruye por falta de memoria, el servicio mantendrá vivo el proceso de Linux.
-Capa Shizuku (Opcional pero Recomendada): Diseña una interfaz de conexión para Shizuku. Si está disponible, úsala para ejecutar un script inicial que desactive las restricciones de procesos en segundo plano del sistema Android, garantizando que tus servidores e hilos de compilación corran sin interrupciones.
+📋 Plan de Implementación Corregido (Docker Registry V2)
+Obtener Token de Autenticación: Realizar una petición GET a auth.docker.io especificando el servicio (registry.docker.io) y el alcance (repository:library/debian:pull).
+Descargar el Manifest: Con el token, consultar a registry-1.docker.io usando el Header Accept correcto para obtener las capas.
+Descargar los Blobs en Streaming: Iterar recursiva o secuencialmente sobre cada capa usando un método de descarga genérico que evite duplicar la lógica de buffers.
+
+🛠️ Dependencias sugeridas (build.gradle.kts)
+Utilizaremos Ktor (un cliente HTTP excelente para Kotlin) y KotlinX Serialization para procesar las respuestas JSON de Docker Hub.
+
+plugins {
+    kotlin("jvm") version "2.0.0"
+    kotlin("plugin.serialization") version "2.0.0"
+}
+
+dependencies {
+    implementation("io.ktor:ktor-client-core:2.3.11")
+    implementation("io.ktor:ktor-client-cio:2.3.11")
+    implementation("io.ktor:ktor-client-content-negotiation:2.3.11")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.11")
+}
+
+💻 Código en Kotlin para la Aplicación de Terminal
+Este código realiza el flujo completo: se autentica de forma anónima, busca el contenido de la imagen de Debian y descarga la capa del sistema de archivos.
+
+import io.ktor.client.*
+import io.ktor.client.call.*
+import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.serialization.kotlinx.json.*
+import io.ktor.utils.io.*
+import io.ktor.utils.io.core.*
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import java.io.File
+
+// Modelos de datos para el API de Docker
+@Serializable data class TokenResponse(val token: String)
+@Serializable data class DockerLayer(val digest: String, val size: Long)
+@Serializable data class DockerManifest(val schemaVersion: Int, val layers: List<DockerLayer>)
+
+// Endpoints globales de la infraestructura de Docker Hub
+private const val AUTH_URL = "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/debian:pull"
+private const val REGISTRY_BASE_URL = "https://registry-1.docker.io/v2"
+
+fun main() = runBlocking {
+    val client = HttpClient(CIO) {
+        install(ContentNegotiation) {
+            json(Json { ignoreUnknownKeys = true })
+        }
+    }
+
+    val repository = "library/debian"
+    // Usamos la etiqueta "latest" o tu hash específico para apuntar al manifiesto correcto
+    val tagOrDigest = "latest" 
+
+    // 1. Obtener Token Autenticación
+    println("1. 🔑 Solicitando token de acceso público a Docker Hub...")
+    val tokenResponse: TokenResponse = client.get(AUTH_URL).body()
+    val token = tokenResponse.token
+
+    // 2. Obtener el Manifest con las capas
+    println("2. 📄 Obteniendo las capas (layers) de la imagen...")
+    val manifestUrl = "$REGISTRY_BASE_URL/$repository/manifests/$tagOrDigest"
+    
+    val manifestHttpResponse = client.get(manifestUrl) {
+        header("Authorization", "Bearer $token")
+        header("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+    }
+    
+    if (manifestHttpResponse.status.value != 200) {
+        println("❌ Error al obtener el manifiesto: ${manifestHttpResponse.status}")
+        client.close()
+        return@runBlocking
+    }
+
+    val manifest: DockerManifest = manifestHttpResponse.body()
+    println("3. 🗜️ Se encontraron ${manifest.layers.size} capa(s) para descargar.")
+    
+    // 3. Descargar capas aplicando DRY (reutilizando la función de streaming)
+    manifest.layers.forEachIndexed { index, layer ->
+        val blobUrl = "$REGISTRY_BASE_URL/$repository/blobs/${layer.digest}"
+        val outputFile = File("debian-layer-$index.tar.gz")
+        
+        println("Descargando capa [${index + 1}/${manifest.layers.size}]: ${layer.digest}")
+        
+        downloadBlobWithStreaming(client, blobUrl, token, outputFile)
+    }
+    
+    println("\n🎉 ¡Descarga completada! Tienes el sistema de archivos raíz listo.")
+    client.close()
+}
+
+/**
+ * Función utilitaria y reutilizable para descargar flujos de datos grandes (Blobs).
+ * Mantiene el código DRY al abstraer el manejo del ByteReadChannel.
+ */
+private suspend fun downloadBlobWithStreaming(client: HttpClient, url: String, token: String, targetFile: File) {
+    client.prepareGet(url) {
+        header("Authorization", "Bearer $token")
+    }.execute { response ->
+        if (response.status.value != 200) {
+            println("❌ Error al descargar capa: ${response.status}")
+            return@execute
+        }
+
+        val channel: ByteReadChannel = response.bodyAsChannel()
+        targetFile.outputStream().use { output ->
+            while (!channel.isClosedForRead) {
+                val packet = channel.readRemaining(DEFAULT_BUFFER_SIZE.toLong())
+                while (!packet.isEmpty) {
+                    val bytes = packet.readBytes()
+                    output.write(bytes)
+                }
+            }
+        }
+        println("✅ Capa guardada con éxito en: ${targetFile.absolutePath}")
+    }
+}

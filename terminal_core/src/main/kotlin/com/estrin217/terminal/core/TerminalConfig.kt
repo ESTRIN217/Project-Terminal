@@ -7,8 +7,11 @@ object TerminalConfig {
     const val ROOTFS_ASSET_NAME = "debian_rootfs.tar.xz"
     // Si se establece, RootfsManager intentará descargar este recurso remoto al iniciar.
     // Puede apuntar a un `index.json` OCI o a un blob tar.xz directo.
-    const val ROOTFS_REMOTE_URL = "https://raw.githubusercontent.com/debuerreotype/docker-debian-artifacts/0e5fb59716bf53dcf4e817e1aa7637f3259e1d45/stable/oci/index.json"
+    const val ROOTFS_REMOTE_URL = "https://raw.githubusercontent.com/debuerreotype/docker-debian-artifacts/cc5fa8529b7279ece04540fdc22b1a60b30f5dae/stable/oci/index.json"
     const val ROOTFS_DIR_NAME = "rootfs"
+    // Docker Hub defaults
+    const val DOCKER_IMAGE = "debian"
+    const val DOCKER_TAG = "stable-slim"
     const val MARKER_FILE_NAME = ".installed"
 
     // Material 3 CLI Color Scheme (ANSI escape codes)
