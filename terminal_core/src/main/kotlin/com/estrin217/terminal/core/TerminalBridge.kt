@@ -6,6 +6,7 @@ import android.content.Context
 import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
+import com.estrin217.terminal.logger.DebugLogger
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
@@ -46,11 +47,13 @@ open class TerminalBridge(
     }
 
     override fun onTitleChanged(changedSession: TerminalSession) {
-        Log.i("TerminalBridge", "Title changed: ${changedSession.title}")
+        DebugLogger.i("TerminalBridge", "Title changed: ${changedSession.title}")
     }
 
     override fun onSessionFinished(finishedSession: TerminalSession) {
-        Log.i("TerminalBridge", "Session finished: ${finishedSession.title}")
+        val exitStatus = finishedSession.exitStatus
+        val isRunning = finishedSession.isRunning
+        DebugLogger.i("TerminalBridge", "Session finished: ${finishedSession.title}. isRunning=$isRunning, exitStatus=$exitStatus")
     }
 
     override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
@@ -69,7 +72,7 @@ open class TerminalBridge(
     }
 
     override fun onBell(session: TerminalSession) {
-        Log.d("TerminalBridge", "Bell triggered")
+        DebugLogger.d("TerminalBridge", "Bell triggered")
     }
 
     override fun onColorsChanged(session: TerminalSession) {
@@ -82,7 +85,7 @@ open class TerminalBridge(
 
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {
         this.shellPid = pid
-        Log.d("TerminalBridge", "Subprocess running with PID: $pid")
+        DebugLogger.d("TerminalBridge", "Subprocess running with PID: $pid")
     }
 
     override fun getTerminalCursorStyle(): Int {
@@ -162,36 +165,36 @@ open class TerminalBridge(
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
 
     override fun onEmulatorSet() {
-        Log.d("TerminalBridge", "Emulator instance initialized and attached to view")
+        DebugLogger.d("TerminalBridge", "Emulator instance initialized and attached to view")
     }
 
     // --- Unified Logging for both interfaces ---
 
     override fun logError(tag: String, message: String) {
-        Log.e(tag, message)
+        DebugLogger.e(tag, message)
     }
 
     override fun logWarn(tag: String, message: String) {
-        Log.w(tag, message)
+        DebugLogger.w(tag, message)
     }
 
     override fun logInfo(tag: String, message: String) {
-        Log.i(tag, message)
+        DebugLogger.i(tag, message)
     }
 
     override fun logDebug(tag: String, message: String) {
-        Log.d(tag, message)
+        DebugLogger.d(tag, message)
     }
 
     override fun logVerbose(tag: String, message: String) {
-        Log.v(tag, message)
+        DebugLogger.d(tag, "[VERBOSE] $message")
     }
 
     override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) {
-        Log.e(tag, message, e)
+        DebugLogger.e(tag, message, e)
     }
 
     override fun logStackTrace(tag: String, e: Exception) {
-        Log.e(tag, "Stack trace occurred", e)
+        DebugLogger.e(tag, "Stack trace occurred", e)
     }
 }
