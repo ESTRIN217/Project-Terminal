@@ -104,8 +104,21 @@ object RootfsManager {
 
             if (entry.isDirectory) {
                 destFile.mkdirs()
+            } else if (entry.isSymbolicLink) {
+                destFile.parentFile?.mkdirs()
+                if (destFile.exists()) {
+                    destFile.delete()
+                }
+                try {
+                    android.os.Os.symlink(entry.linkName, destFile.absolutePath)
+                } catch (e: Exception) {
+                    throw IOException("Failed to create symlink from ${entry.linkName} to ${destFile.absolutePath}", e)
+                }
             } else {
                 destFile.parentFile?.mkdirs()
+                if (destFile.exists()) {
+                    destFile.delete()
+                }
                 FileOutputStream(destFile).use { outputStream ->
                     tarIn.copyTo(outputStream) 
                 }
