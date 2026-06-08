@@ -6,7 +6,6 @@ import android.content.Context
 import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
-import com.estrin217.terminal.logger.DebugLogger
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
@@ -16,6 +15,29 @@ open class TerminalBridge(
     protected val context: Context,
     protected val terminalView: TerminalView? = null
 ) : TerminalSessionClient, TerminalViewClient {
+
+    interface LogDelegate {
+        fun log(level: Int, tag: String, message: String, throwable: Throwable? = null)
+    }
+
+    companion object {
+        var logDelegate: LogDelegate? = null
+        
+        private fun logToDelegate(level: Int, tag: String, message: String, throwable: Throwable? = null) {
+            val delegate = logDelegate
+            if (delegate != null) {
+                delegate.log(level, tag, message, throwable)
+            } else {
+                when (level) {
+                    Log.DEBUG -> Log.d(tag, message, throwable)
+                    Log.INFO -> Log.i(tag, message, throwable)
+                    Log.WARN -> Log.w(tag, message, throwable)
+                    Log.ERROR -> Log.e(tag, message, throwable)
+                    else -> Log.v(tag, message, throwable)
+                }
+            }
+        }
+    }
 
     private var shellPid: Int = -1
 
@@ -47,13 +69,13 @@ open class TerminalBridge(
     }
 
     override fun onTitleChanged(changedSession: TerminalSession) {
-        DebugLogger.i("TerminalBridge", "Title changed: ${changedSession.title}")
+        logToDelegate(Log.INFO, "TerminalBridge", "Title changed: ${changedSession.title}")
     }
 
     override fun onSessionFinished(finishedSession: TerminalSession) {
         val exitStatus = finishedSession.exitStatus
         val isRunning = finishedSession.isRunning
-        DebugLogger.i("TerminalBridge", "Session finished: ${finishedSession.title}. isRunning=$isRunning, exitStatus=$exitStatus")
+        logToDelegate(Log.INFO, "TerminalBridge", "Session finished: ${finishedSession.title}. isRunning=$isRunning, exitStatus=$exitStatus")
     }
 
     override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
@@ -72,7 +94,7 @@ open class TerminalBridge(
     }
 
     override fun onBell(session: TerminalSession) {
-        DebugLogger.d("TerminalBridge", "Bell triggered")
+        logToDelegate(Log.DEBUG, "TerminalBridge", "Bell triggered")
     }
 
     override fun onColorsChanged(session: TerminalSession) {
@@ -85,7 +107,7 @@ open class TerminalBridge(
 
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {
         this.shellPid = pid
-        DebugLogger.d("TerminalBridge", "Subprocess running with PID: $pid")
+        logToDelegate(Log.DEBUG, "TerminalBridge", "Subprocess running with PID: $pid")
     }
 
     override fun getTerminalCursorStyle(): Int {
@@ -165,36 +187,36 @@ open class TerminalBridge(
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
 
     override fun onEmulatorSet() {
-        DebugLogger.d("TerminalBridge", "Emulator instance initialized and attached to view")
+        logToDelegate(Log.DEBUG, "TerminalBridge", "Emulator instance initialized and attached to view")
     }
 
     // --- Unified Logging for both interfaces ---
 
     override fun logError(tag: String, message: String) {
-        DebugLogger.e(tag, message)
+        logToDelegate(Log.ERROR, tag, message)
     }
 
     override fun logWarn(tag: String, message: String) {
-        DebugLogger.w(tag, message)
+        logToDelegate(Log.WARN, tag, message)
     }
 
     override fun logInfo(tag: String, message: String) {
-        DebugLogger.i(tag, message)
+        logToDelegate(Log.INFO, tag, message)
     }
 
     override fun logDebug(tag: String, message: String) {
-        DebugLogger.d(tag, message)
+        logToDelegate(Log.DEBUG, tag, message)
     }
 
     override fun logVerbose(tag: String, message: String) {
-        DebugLogger.d(tag, "[VERBOSE] $message")
+        logToDelegate(Log.VERBOSE, tag, "[VERBOSE] $message")
     }
 
-    override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) {
-        DebugLogger.e(tag, message, e)
+    override fun logStackTraceWithMessage(tag: String, message: String, e: java.lang.Exception) {
+        logToDelegate(Log.ERROR, tag, message, e)
     }
 
-    override fun logStackTrace(tag: String, e: Exception) {
-        DebugLogger.e(tag, "Stack trace occurred", e)
+    override fun logStackTrace(tag: String, e: java.lang.Exception) {
+        logToDelegate(Log.ERROR, tag, "Stack trace occurred", e)
     }
 }
