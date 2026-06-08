@@ -51,18 +51,6 @@ class MainActivity : AppCompatActivity() {
 
         DebugLogger.i(TAG, "MainActivity created")
 
-        TerminalBridge.logDelegate = object : TerminalBridge.LogDelegate {
-            override fun log(level: Int, tag: String, message: String, throwable: Throwable?) {
-                when (level) {
-                    android.util.Log.DEBUG -> DebugLogger.d(tag, message)
-                    android.util.Log.INFO -> DebugLogger.i(tag, message)
-                    android.util.Log.WARN -> DebugLogger.w(tag, message)
-                    android.util.Log.ERROR -> DebugLogger.e(tag, message, throwable)
-                    else -> DebugLogger.d(tag, message)
-                }
-            }
-        }
-
         terminalBridge = TerminalBridge(this, binding.terminalView).apply {
             modifierKeyConsumedListener = object : TerminalBridge.OnModifierKeyConsumedListener {
                 override fun onControlKeyConsumed() {
