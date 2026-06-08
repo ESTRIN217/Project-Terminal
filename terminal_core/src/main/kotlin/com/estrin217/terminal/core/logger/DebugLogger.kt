@@ -19,14 +19,15 @@ object DebugLogger {
     private val logLock = Any()
 
     data class LogEntry(
-        val timestamp: String,
-        val level: LogLevel,
-        val tag: String,
-        val message: String
+    val timestamp: String,
+    val level: LogLevel,
+    val tag: String,
+    val threadName: String, // ¡Nuevo!
+    val message: String
     ) {
-        override fun toString(): String {
-            return "[$timestamp] [$level] [$tag] $message"
-        }
+    override fun toString(): String {
+        return "[$timestamp] [$level] [$threadName] [$tag] $message"
+    }
     }
 
     enum class LogLevel {
@@ -69,16 +70,19 @@ object DebugLogger {
     /**
      * Agrega un log a la lista
      */
-    private fun addLog(level: LogLevel, tag: String, message: String) {
-        synchronized(logLock) {
-            val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
-            logs.add(LogEntry(timestamp, level, tag, message))
+    private fun addLog(level: LogLevel, customTag: String, message: String) {
+    synchronized(logLock) {
+        val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+        val autoTag = getAutoTagAndLine()
+        val finalTag = if (customTag.isEmpty()) autoTag else "$customTag -> $autoTag"
+        val threadName = Thread.currentThread().name
 
-            // Limitar el tamaño de los logs
-            if (logs.size > maxLogs) {
-                logs.removeAt(0)
-            }
+        logs.add(LogEntry(timestamp, level, finalTag, threadName, message))
+
+        if (logs.size > maxLogs) {
+            logs.removeAt(0)
         }
+    }
     }
 
     /**
@@ -212,5 +216,34 @@ object DebugLogger {
                 Error: $error
             """.trimIndent()
         }
+    }
+    private fun getAutoTagAndLine(): String {
+    val stackTrace = Throwable().stackTrace
+    // Buscamos el primer elemento fuera de la clase DebugLogger
+    val element = stackTrace.firstOrNull { it.className != DebugLogger::class.java.name }
+    return if (element != null) {
+        val simpleClassName = element.className.substringAfterLast('.')
+        "$simpleClassName.${element.methodName}() [Line ${element.lineNumber}]"
+    } else {
+        "UnknownSource"
+    }
+    }
+    fun initCrashHandler(context: Context) {
+    val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+
+    Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+        val writer = StringWriter()
+        throwable.printStackTrace(PrintWriter(writer))
+        val stackTraceStr = writer.toString()
+
+        // Registramos el error de forma síncrona en nuestro logger
+        e("CRASH", "La aplicación se cerró inesperadamente en el hilo: ${thread.name}", throwable)
+        
+        // Forzamos la exportación inmediata a un archivo de emergencia
+        exportLogsToFile(context)
+
+        // Devolvemos el control al sistema operativo para que la app cierre correctamente
+        defaultHandler?.uncaughtException(thread, throwable)
+    }
     }
 }
