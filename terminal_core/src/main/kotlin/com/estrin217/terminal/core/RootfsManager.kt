@@ -110,7 +110,7 @@ object RootfsManager {
                     destFile.delete()
                 }
                 try {
-                    android.os.Os.symlink(entry.linkName, destFile.absolutePath)
+                    android.system.Os.symlink(entry.linkName, destFile.absolutePath)
                 } catch (e: Exception) {
                     throw IOException("Failed to create symlink from ${entry.linkName} to ${destFile.absolutePath}", e)
                 }
