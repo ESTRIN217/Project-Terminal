@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.jetbrains.kotlin.android)
+    // El plugin 'jetbrains.kotlin.android' ya no se declara aquí de forma explícita.
+    // Con AGP 9.0+, el soporte para Kotlin está integrado de manera nativa (built-in).
     alias(libs.plugins.jetbrains.kotlin.compose)
 }
 
@@ -34,12 +35,16 @@ android {
     }
     
     compileOptions {
+        // Obligatorio para entornos JDK 25: forzar bytecode compatible con la máquina virtual de Android.
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    
-    kotlinOptions {
-        jvmTarget = "17"
+}
+
+// Reemplazo moderno de 'kotlinOptions': Ahora se configura de forma global a nivel de bloque kotlin
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
@@ -49,7 +54,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     
-    // Compose
+    // Compose (Se gestionan de manera óptima mediante el plugin 'kotlin-compose' aplicado arriba)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)

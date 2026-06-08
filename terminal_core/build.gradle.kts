@@ -1,6 +1,6 @@
 plugins {
     id("com.android.library")
-    id("org.jetbrains.kotlin.android")
+    // Se elimina 'org.jetbrains.kotlin.android'. AGP 9.0+ gestiona Kotlin de forma nativa.
     alias(libs.plugins.kotlin.serialization)
 }
 
@@ -43,15 +43,22 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
+}
+
+// Reemplazo de 'kotlinOptions' por la sintaxis moderna con Lazy Properties compatible con JDK 25
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
 dependencies {
     api(project(":terminal-emulator"))
     api(project(":terminal-view"))
-    implementation("androidx.core:core-ktx:1.13.1")
+    
+    // Corregido para usar tu catálogo de versiones centralizado en lugar de harcodear la versión vieja
+    implementation(libs.androidx.core.ktx)
+    
     implementation(libs.commons.compress)
     implementation(libs.xz)
     implementation(libs.ktor.client.core)

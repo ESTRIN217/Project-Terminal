@@ -1,17 +1,28 @@
 [versions]
-agp = "8.6.0"
-kotlin = "2.0.20"
-coreKtx = "1.13.1"
+# Plugins principales de infraestructura de construcción
+agp = "9.0.1"
+kotlin = "2.3.21"
+
+# Soporte central de AndroidX y UI tradicional
+coreKtx = "1.19.0"
+appcompat = "1.7.0"
+material = "1.12.0"
+
+# Pruebas unitarias y de interfaz gráfica (UI)
 junit = "4.13.2"
 junitVersion = "1.2.1"
 espressoCore = "3.6.1"
-appcompat = "1.7.0"
-material = "1.12.0"
+
+# Utilidades de compresión de archivos
 commonsCompress = "1.26.1"
 xz = "1.9"
-ktor = "2.3.11"
-kotlinx-serialization = "1.6.0"
+
+# Cliente HTTP Ktor y ecosistema de serialización/corrutinas de Kotlin
+ktor = "3.5.0"
+kotlinx-serialization = "1.6.3"
 kotlinx-coroutines = "1.9.0"
+
+# Componentes modernos para desarrollo con Jetpack Compose y Ciclo de vida
 compose = "1.7.5"
 lifecycle = "2.8.7"
 activity = "1.9.3"
