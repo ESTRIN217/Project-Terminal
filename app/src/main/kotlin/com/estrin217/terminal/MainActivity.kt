@@ -15,7 +15,7 @@ import com.estrin217.terminal.core.TerminalBridge
 import com.estrin217.terminal.core.TerminalConfig
 import com.estrin217.terminal.core.TerminalService
 import com.estrin217.terminal.databinding.ActivityMainBinding
-import com.estrin217.terminal.logger.DebugLogger
+import com.estrin217.terminal.core.logger.DebugLogger
 import com.estrin217.terminal.logger.LoggerActivity
 import com.termux.terminal.TerminalSession
 import java.io.File

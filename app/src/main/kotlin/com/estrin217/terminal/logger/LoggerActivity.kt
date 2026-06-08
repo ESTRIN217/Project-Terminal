@@ -14,6 +14,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import com.estrin217.terminal.R
 import com.estrin217.terminal.databinding.ActivityLoggerBinding
+import com.estrin217.terminal.core.logger.DebugLogger
 
 class LoggerActivity : AppCompatActivity() {
 
