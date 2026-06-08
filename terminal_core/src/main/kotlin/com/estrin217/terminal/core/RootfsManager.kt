@@ -97,8 +97,9 @@ object RootfsManager {
             // Protección crítica contra vulnerabilidades Path Traversal (Zip Slip)
             val canonicalDest = destFile.canonicalPath
             val canonicalRoot = rootfsDir.canonicalPath
-            if (!canonicalDest.startsWith(canonicalRoot + File.separator)) {
-                throw IOException("Security Violation: Entry path traversal detected in tar: ${entry.name}") 
+            // Allow entries that resolve to the rootfs directory itself (e.g. './')
+            if (!(canonicalDest == canonicalRoot || canonicalDest.startsWith(canonicalRoot + File.separator))) {
+                throw IOException("Security Violation: Entry path traversal detected in tar: ${entry.name}")
             }
 
             if (entry.isDirectory) {

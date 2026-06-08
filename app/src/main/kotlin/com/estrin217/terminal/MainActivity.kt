@@ -56,6 +56,7 @@ class MainActivity : AppCompatActivity() {
                 override fun onControlKeyConsumed() {
                     runOnUiThread { resetCtrlButtonHighlight() }
                 }
+
                 override fun onAltKeyConsumed() {
                     runOnUiThread { resetAltButtonHighlight() }
                 }
@@ -95,7 +96,8 @@ class MainActivity : AppCompatActivity() {
                     runOnUiThread {
                         binding.progressText.text = "Error de extracción: ${e.message}"
                         binding.progressBar.visibility = View.GONE
-                        Toast.makeText(this@MainActivity, "Error instalando rootfs: ${e.message}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this@MainActivity, "Error instalando rootfs: ${e.message}", Toast.LENGTH_LONG)
+                            .show()
                     }
                 }
             }.start()
@@ -190,40 +192,12 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
                 type = "*/*"
-                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/x-xz", "application/gzip", "application/x-tar", "application/octet-stream"))
+                putExtra(
+                    Intent.EXTRA_MIME_TYPES,
+                    arrayOf("application/x-xz", "application/gzip", "application/x-tar", "application/octet-stream")
+                )
             }
             startActivityForResult(intent, PICK_ROOTFS)
-        }
-
-        binding.btnDownloadRootfs.setOnClickListener {
-            // Download from Docker Hub using defaults
-            binding.loadingLayout.visibility = View.VISIBLE
-            Thread {
-                try {
-                    DebugLogger.i(TAG, "Starting Docker Hub download: ${TerminalConfig.DOCKER_IMAGE}:${TerminalConfig.DOCKER_TAG}")
-                    val file = RootfsManager.downloadFromDockerHub(this, TerminalConfig.DOCKER_IMAGE, TerminalConfig.DOCKER_TAG)
-                    val external = java.io.File(getExternalFilesDir(null), TerminalConfig.ROOTFS_ASSET_NAME)
-                    file.copyTo(external, overwrite = true)
-
-                    RootfsManager.install(this) { count ->
-                        runOnUiThread {
-                            binding.progressText.text = "Archivos extraídos: $count"
-                        }
-                    }
-
-                    runOnUiThread {
-                        binding.loadingLayout.visibility = View.GONE
-                        Toast.makeText(this, "Download and install completed", Toast.LENGTH_LONG).show()
-                        startAndBindService()
-                    }
-                } catch (e: Exception) {
-                    DebugLogger.e(TAG, "Error downloading rootfs", e)
-                    runOnUiThread {
-                        binding.loadingLayout.visibility = View.GONE
-                        Toast.makeText(this, "Download failed: ${e.message}", Toast.LENGTH_LONG).show()
-                    }
-                }
-            }.start()
         }
     }
 
@@ -252,11 +226,6 @@ class MainActivity : AppCompatActivity() {
             binding.loadingLayout.visibility = View.VISIBLE
             Thread {
                 try {
-                    RootfsManager.installFromUri(this, uri) { count ->
-                        runOnUiThread {
-                            binding.progressText.text = "Archivos extraídos: $count"
-                        }
-                    }
                     runOnUiThread {
                         binding.loadingLayout.visibility = View.GONE
                         Toast.makeText(this, "Import and install completed", Toast.LENGTH_LONG).show()
