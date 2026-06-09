@@ -30,12 +30,13 @@ object TerminalConfig {
     }
 
     /**
-     * Android extracts native .so files automatically to applicationInfo.nativeLibraryDir.
-     * Our libproot.so (which is actually the PRoot executable renamed to satisfy Android package validation)
-     * is located there.
+     * Force native libraries to be loaded and run explicitly from the native /lib directory of the application.
      */
     fun getPRootExecutable(context: Context): File {
-        return File(context.applicationInfo.nativeLibraryDir, "libproot.so")
+        val nativeDir = context.applicationInfo.nativeLibraryDir ?: "${context.applicationInfo.dataDir}/lib"
+        val prootFile = File(nativeDir, "libproot.so")
+        com.estrin217.terminal.core.logger.DebugLogger.i("TerminalConfig", "Forced native proot executable path: ${prootFile.absolutePath}")
+        return prootFile
     }
 
     fun getEnvironmentVariables(context: Context): Array<String> {

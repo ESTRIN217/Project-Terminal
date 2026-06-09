@@ -17,7 +17,10 @@ object RootfsManager {
      * Comprueba si el entorno Linux rootfs ya está instalado.
      */
     fun isInstalled(context: Context): Boolean {
-        return TerminalConfig.getMarkerFile(context).exists()
+        val marker = TerminalConfig.getMarkerFile(context)
+        val installed = marker.exists()
+        com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Checking installation status at ${marker.absolutePath}: installed=$installed")
+        return installed
     }
 
     /**
@@ -27,7 +30,10 @@ object RootfsManager {
     @Throws(IOException::class)
     fun install(context: Context, progressCallback: (extractedEntries: Int) -> Unit = {}) {
         val rootfsDir = TerminalConfig.getRootfsDir(context)
+        com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Starting rootfs installation into ${rootfsDir.absolutePath}")
+        
         if (rootfsDir.exists()) {
+            com.estrin217.terminal.core.logger.DebugLogger.w("RootfsManager", "Rootfs directory already exists. Purging it before install.")
             rootfsDir.deleteRecursively()
         }
         rootfsDir.mkdirs()
@@ -36,24 +42,39 @@ object RootfsManager {
         val image = TerminalConfig.DOCKER_IMAGE
         val tag = TerminalConfig.DOCKER_TAG
 
+        com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Resolving rootfs package from Docker Hub: image=$image, tag=$tag")
         val downloadedBlob = runBlocking {
             DockerHubDownloader.downloadFromDockerHub(context, image, tag) 
         }
 
+        com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Rootfs download complete: ${downloadedBlob.absolutePath}. Commencing extraction...")
+
         // Extracción del tarball descargado
-        java.io.FileInputStream(downloadedBlob).use { inputStream ->
-            extractTarArchive(inputStream, rootfsDir, progressCallback)
+        try {
+            java.io.FileInputStream(downloadedBlob).use { inputStream ->
+                extractTarArchive(inputStream, rootfsDir, progressCallback)
+            }
+        } catch (e: Exception) {
+            com.estrin217.terminal.core.logger.DebugLogger.e("RootfsManager", "Error extracting rootfs tar archive", e)
+            throw e
         }
 
+        com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Creating fallback directories: /home/programador and /tmp")
         // Asegurar las estructuras de directorios base del entorno integrado
         File(rootfsDir, "home/programador").mkdirs()
         File(rootfsDir, "tmp").mkdirs()
 
         // Crear el marcador de instalación completada exitosamente
-        TerminalConfig.getMarkerFile(context).createNewFile() 
+        val marker = TerminalConfig.getMarkerFile(context)
+        marker.createNewFile() 
+        com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Installation completed. Created marker: ${marker.absolutePath}")
 
         // Limpieza del archivo binario temporal de la caché
-        downloadedBlob.delete()
+        if (downloadedBlob.delete()) {
+            com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Cleaned up temporary blob file.")
+        } else {
+            com.estrin217.terminal.core.logger.DebugLogger.w("RootfsManager", "Failed to clean up temporary blob file: ${downloadedBlob.absolutePath}")
+        }
     }
 
     /**

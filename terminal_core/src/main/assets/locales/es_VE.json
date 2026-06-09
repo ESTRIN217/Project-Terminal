@@ -1,0 +1,23 @@
+{
+  "app_name": "Terminal",
+  "loading_text": "Descomprimiendo entorno Linux (Rootfs)...",
+  "progress_desc": "Esto ocurrirá solo la primera vez.",
+  "extracted_count": "Archivos extraídos: %s",
+  "extraction_error": "Error de extracción: %s",
+  "install_error_toast": "Error instalando rootfs: %s",
+  "no_internet_error": "Sin internet",
+  "connection_error": "Error de conexión",
+  "clear_logs_title": "¿Limpiar logs?",
+  "clear_logs_desc": "¿Estás seguro de que deseas limpiar todos los logs?",
+  "yes": "Sí",
+  "no": "No",
+  "filter_level": "Filtrar Nivel:",
+  "refresh": "Actualizar",
+  "copy": "Copiar",
+  "export": "Exportar",
+  "clear": "Limpiar",
+  "no_logs_copy": "No hay logs para copiar",
+  "logs_copied": "Logs copiados al portapapeles",
+  "logs_exported": "Logs exportados a: %s",
+  "share_logs": "Compartir logs"
+}

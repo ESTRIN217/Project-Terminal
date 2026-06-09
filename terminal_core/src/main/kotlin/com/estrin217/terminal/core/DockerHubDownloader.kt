@@ -61,40 +61,80 @@ internal object DockerHubDownloader {
         val manifests: List<DockerManifestReference> = emptyList()
     )
 
+    private fun isNetworkAvailable(context: Context): Boolean {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+        if (connectivityManager != null) {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                val network = connectivityManager.activeNetwork ?: return false
+                val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+                return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            } else {
+                @Suppress("DEPRECATION")
+                val activeNetworkInfo = connectivityManager.activeNetworkInfo
+                return activeNetworkInfo != null && activeNetworkInfo.isConnected
+            }
+        }
+        return false
+    }
+
     suspend fun downloadFromDockerHub(context: Context, image: String, tag: String): File {
         val repo = if (image.contains("/")) image else "library/$image"
+        
+        com.estrin217.terminal.core.logger.DebugLogger.i("DockerHubDownloader", "Starting Docker Hub rootfs download check for $repo:$tag")
 
-        HttpClient(CIO) {
-            install(ContentNegotiation) {
-                json(json)
-            }
-        }.use { client ->
-            val token = client.get(AUTH_URL) {
-                url {
-                    parameter("service", "registry.docker.io")
-                    parameter("scope", "repository:$repo:pull")
+        if (!isNetworkAvailable(context)) {
+            val errMsg = LocaleManager.getString("no_internet_error")
+            com.estrin217.terminal.core.logger.DebugLogger.e("DockerHubDownloader", "Pre-download network validation failed: $errMsg")
+            throw IOException(errMsg)
+        }
+
+        try {
+            HttpClient(CIO) {
+                install(ContentNegotiation) {
+                    json(json)
                 }
-            }.body<TokenResponse>().token
+            }.use { client ->
+                com.estrin217.terminal.core.logger.DebugLogger.i("DockerHubDownloader", "Requesting auth token from $AUTH_URL for image $repo")
+                val token = client.get(AUTH_URL) {
+                    url {
+                        parameter("service", "registry.docker.io")
+                        parameter("scope", "repository:$repo:pull")
+                    }
+                }.body<TokenResponse>().token
 
-            if (token.isBlank()) {
-                throw IOException("Failed to obtain Docker Hub token")
+                if (token.isBlank()) {
+                    val errMsg = LocaleManager.getString("connection_error") + ": Failed to obtain Docker Hub token"
+                    com.estrin217.terminal.core.logger.DebugLogger.e("DockerHubDownloader", errMsg)
+                    throw IOException(errMsg)
+                }
+
+                com.estrin217.terminal.core.logger.DebugLogger.i("DockerHubDownloader", "Token obtained successfully. Fetching manifest...")
+                val manifest = fetchManifest(client, repo, tag, token)
+                
+                com.estrin217.terminal.core.logger.DebugLogger.i("DockerHubDownloader", "Manifest fetched. Resolving layers...")
+                val layers = resolveLayers(client, repo, token, manifest)
+                
+                val chosenLayer = chooseLayer(layers)
+                    ?: throw IOException("No suitable layer found in manifest for $repo:$tag")
+
+                com.estrin217.terminal.core.logger.DebugLogger.i("DockerHubDownloader", "Layer resolved: ${chosenLayer.digest}. Commencing download...")
+                val blobUrl = "$REGISTRY_BASE_URL/$repo/blobs/${chosenLayer.digest}"
+                val outFile = File(context.cacheDir, "docker_rootfs_${repo.replace('/', '_')}_$tag.bin")
+
+                downloadBlobWithStreaming(client, blobUrl, token, outFile)
+                com.estrin217.terminal.core.logger.DebugLogger.i("DockerHubDownloader", "Download completed successfully: ${outFile.absolutePath}")
+                return outFile
             }
-
-            val manifest = fetchManifest(client, repo, tag, token)
-            val layers = resolveLayers(client, repo, token, manifest)
-            val chosenLayer = chooseLayer(layers)
-                ?: throw IOException("No suitable layer found in manifest for $repo:$tag")
-
-            val blobUrl = "$REGISTRY_BASE_URL/$repo/blobs/${chosenLayer.digest}"
-            val outFile = File(context.cacheDir, "docker_rootfs_${repo.replace('/', '_')}_$tag.bin")
-
-            downloadBlobWithStreaming(client, blobUrl, token, outFile)
-            return outFile
+        } catch (e: Exception) {
+            com.estrin217.terminal.core.logger.DebugLogger.e("DockerHubDownloader", "Critical error during download from Docker Hub", e)
+            throw if (e is IOException) e else IOException(LocaleManager.getString("connection_error") + ": " + e.message, e)
         }
     }
 
     private suspend fun fetchManifest(client: HttpClient, repo: String, tag: String, token: String): DockerManifest {
-        val response = client.get("$REGISTRY_BASE_URL/$repo/manifests/$tag") {
+        val url = "$REGISTRY_BASE_URL/$repo/manifests/$tag"
+        com.estrin217.terminal.core.logger.DebugLogger.i("DockerHubDownloader", "Fetching manifest from URL: $url")
+        val response = client.get(url) {
             header("Authorization", "Bearer $token")
             header(
                 "Accept",
@@ -103,7 +143,9 @@ internal object DockerHubDownloader {
         }
 
         if (!response.status.value.toString().startsWith("2")) {
-            throw IOException("Failed to obtain Docker manifest: ${response.status}")
+            val errMsg = "Failed to obtain Docker manifest: ${response.status}"
+            com.estrin217.terminal.core.logger.DebugLogger.e("DockerHubDownloader", errMsg)
+            throw IOException(errMsg)
         }
 
         val manifestText = response.bodyAsText()
@@ -124,13 +166,17 @@ internal object DockerHubDownloader {
             throw IOException("Selected manifest reference has no digest for $repo")
         }
 
-        val response = client.get("$REGISTRY_BASE_URL/$repo/manifests/$digest") {
+        val url = "$REGISTRY_BASE_URL/$repo/manifests/$digest"
+        com.estrin217.terminal.core.logger.DebugLogger.i("DockerHubDownloader", "Resolving nested layer manifest from URL: $url")
+        val response = client.get(url) {
             header("Authorization", "Bearer $token")
             header("Accept", "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json")
         }
 
         if (!response.status.value.toString().startsWith("2")) {
-            throw IOException("Failed to obtain Docker manifest for digest $digest: ${response.status}")
+            val errMsg = "Failed to obtain Docker manifest for digest $digest: ${response.status}"
+            com.estrin217.terminal.core.logger.DebugLogger.e("DockerHubDownloader", errMsg)
+            throw IOException(errMsg)
         }
 
         val manifestText = response.bodyAsText()
@@ -145,23 +191,33 @@ internal object DockerHubDownloader {
     }
 
     private suspend fun downloadBlobWithStreaming(client: HttpClient, url: String, token: String, targetFile: File) {
+        com.estrin217.terminal.core.logger.DebugLogger.i("DockerHubDownloader", "Downloading layer blob from URL: $url")
         val response = client.get(url) {
             header("Authorization", "Bearer $token")
         }
 
         if (!response.status.value.toString().startsWith("2")) {
-            throw IOException("Failed to download layer blob: ${response.status}")
+            val errMsg = "Failed to download layer blob: ${response.status}"
+            com.estrin217.terminal.core.logger.DebugLogger.e("DockerHubDownloader", errMsg)
+            throw IOException(errMsg)
         }
 
         val channel = response.bodyAsChannel()
         try {
             targetFile.outputStream().use { output ->
+                var bytesWritten = 0L
                 while (true) {
                     val packet = channel.readRemaining(8192L)
                     if (packet.isEmpty) break
-                    output.write(packet.readBytes())
+                    val bytes = packet.readBytes()
+                    output.write(bytes)
+                    bytesWritten += bytes.size
                 }
+                com.estrin217.terminal.core.logger.DebugLogger.i("DockerHubDownloader", "Streaming complete. Total bytes written: $bytesWritten")
             }
+        } catch (e: Exception) {
+            com.estrin217.terminal.core.logger.DebugLogger.e("DockerHubDownloader", "Error writing downloaded blob to file", e)
+            throw e
         } finally {
             channel.cancel(null)
         }
