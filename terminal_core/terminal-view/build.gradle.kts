@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         minSdk = (project.findProperty("minSdkVersion") as? String)?.toInt() ?: 26
-        targetSdk = (project.findProperty("targetSdkVersion") as? String)?.toInt() ?: 35
+        //targetSdk = (project.findProperty("targetSdkVersion") as? String)?.toInt() ?: 35
         
         testInstrumentationRunner = "android.support.test.runner.AndroidJUnitRunner"
     }
@@ -19,7 +19,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            proguardFiles(getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro")
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 

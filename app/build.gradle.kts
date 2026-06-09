@@ -7,12 +7,12 @@ plugins {
 
 android {
     namespace = "com.estrin217.terminal"
-    compileSdk = 35
+    compileSdk = (project.findProperty("compileSdkVersion") as? String)?.toInt() ?: 37
 
     defaultConfig {
         applicationId = "com.estrin217.terminal"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = (project.findProperty("targetSdkVersion") as? String)?.toInt() ?: 37
         versionCode = 1
         versionName = "1.0"
 

@@ -73,19 +73,19 @@ fun LoggerScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16dp)
+                .padding(16.dp)
         ) {
             // Sección de estadísticas en un contenedor moderno MD3 Card
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 12dp),
+                    .padding(bottom = 12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
             ) {
                 Text(
                     text = statistics,
                     style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                    modifier = Modifier.padding(12dp),
+                    modifier = Modifier.padding(12.dp),
                     color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
             }
@@ -95,14 +95,14 @@ fun LoggerScreen(
                 text = "Filter Level:",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 4dp)
+                modifier = Modifier.padding(bottom = 4.dp)
             )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
-                    .padding(bottom = 12dp),
-                horizontalArrangement = Arrangement.spacedBy(8dp)
+                    .padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 val levels = listOf("All", "DEBUG", "INFO", "WARNING", "ERROR") // 
                 levels.forEach { level ->
@@ -118,40 +118,40 @@ fun LoggerScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1s f)
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(8dp))
-                    .padding(8dp),
-                verticalArrangement = Arrangement.spacedBy(6dp)
+                    .weight(1f)
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(8.dp))
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 items(filteredLogs) { log ->
                     LogItemRow(log = log)
                 }
             }
 
-            Spacer(modifier = Modifier.height(16dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Fila de botones de acción inferiores utilizando iconos estructuradamente Outlined
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 val buttonModifier = Modifier.weight(1f)
 
-                OutlinedButton(onClick = { viewModel.refreshLogs() }, modifier = buttonModifier, contentPadding = PaddingValues(4dp)) {
-                    Icon(Icons.Outlined.Refresh, contentDescription = "Refresh", modifier = Modifier.size(18dp))
-                    Spacer(modifier = Modifier.width(4dp))
+                OutlinedButton(onClick = { viewModel.refreshLogs() }, modifier = buttonModifier, contentPadding = PaddingValues(4.dp)) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = "Refresh", modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text("Refresh", fontSize = 11.sp)
                 }
 
-                OutlinedButton(onClick = { viewModel.copyLogsToClipboard(context) }, modifier = buttonModifier, contentPadding = PaddingValues(4dp)) {
-                    Icon(Icons.Outlined.Share, contentDescription = "Copy", modifier = Modifier.size(18dp))
-                    Spacer(modifier = Modifier.width(4dp))
+                OutlinedButton(onClick = { viewModel.copyLogsToClipboard(context) }, modifier = buttonModifier, contentPadding = PaddingValues(4.dp)) {
+                    Icon(Icons.Outlined.Share, contentDescription = "Copy", modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text("Copy", fontSize = 11.sp)
                 }
 
-                OutlinedButton(onClick = { viewModel.exportAndShareLogs(context) }, modifier = buttonModifier, contentPadding = PaddingValues(4dp)) {
-                    Icon(Icons.Outlined.Email, contentDescription = "Export", modifier = Modifier.size(18dp))
-                    Spacer(modifier = Modifier.width(4dp))
+                OutlinedButton(onClick = { viewModel.exportAndShareLogs(context) }, modifier = buttonModifier, contentPadding = PaddingValues(4.dp)) {
+                    Icon(Icons.Outlined.Email, contentDescription = "Export", modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text("Export", fontSize = 11.sp)
                 }
 
@@ -159,10 +159,10 @@ fun LoggerScreen(
                     onClick = { showClearDialog = true },
                     modifier = buttonModifier,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    contentPadding = PaddingValues(4dp)
+                    contentPadding = PaddingValues(4.dp)
                 ) {
-                    Icon(Icons.Outlined.Delete, contentDescription = "Clear", modifier = Modifier.size(18dp))
-                    Spacer(modifier = Modifier.width(4dp))
+                    Icon(Icons.Outlined.Delete, contentDescription = "Clear", modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text("Clear", fontSize = 11.sp, color = MaterialTheme.colorScheme.onError)
                 }
             }
@@ -183,20 +183,20 @@ fun LogItemRow(log: DebugLogger.LogEntry) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(4dp))
-            .padding(8dp)
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(4.dp))
+            .padding(8.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Surface(
                 color = badgeColor,
-                shape = RoundedCornerShape(4dp),
-                modifier = Modifier.padding(end = 6dp)
+                shape = RoundedCornerShape(4.dp),
+                modifier = Modifier.padding(end = 6.dp)
             ) {
                 Text(
                     text = log.level.name,
                     color = Color.White,
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    modifier = Modifier.padding(horizontal = 6dp, vertical = 2dp)
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                 )
             }
             Text(
@@ -205,7 +205,7 @@ fun LogItemRow(log: DebugLogger.LogEntry) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Spacer(modifier = Modifier.height(4dp))
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = log.tag,
             style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
