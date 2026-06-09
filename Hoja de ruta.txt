@@ -1,120 +1,68 @@
-📋 Plan de Implementación Corregido (Docker Registry V2)
-Obtener Token de Autenticación: Realizar una petición GET a auth.docker.io especificando el servicio (registry.docker.io) y el alcance (repository:library/debian:pull).
-Descargar el Manifest: Con el token, consultar a registry-1.docker.io usando el Header Accept correcto para obtener las capas.
-Descargar los Blobs en Streaming: Iterar recursiva o secuencialmente sobre cada capa usando un método de descarga genérico que evite duplicar la lógica de buffers.
+Plan de Compilación y Optimización de PRoot para Android (ARM64-v8A)
+Paso 1: Configurar el Entorno en GitHub Codespaces
+Antes de clonar, asegúrate de tener las herramientas de compilación cruzada necesarias para apuntar a la arquitectura de Android.
 
-🛠️ Dependencias sugeridas (build.gradle.kts)
-Utilizaremos Ktor (un cliente HTTP excelente para Kotlin) y KotlinX Serialization para procesar las respuestas JSON de Docker Hub.
+Abre tu terminal en Codespaces.
 
-plugins {
-    kotlin("jvm") version "2.0.0"
-    kotlin("plugin.serialization") version "2.0.0"
-}
+Actualiza el gestor de paquetes e instala el NDK de Android (o en su defecto, los compiladores cruzados de GNU para ARM64 si el script lo permite, aunque para Android se recomienda el NDK).
 
-dependencies {
-    implementation("io.ktor:ktor-client-core:2.3.11")
-    implementation("io.ktor:ktor-client-cio:2.3.11")
-    implementation("io.ktor:ktor-client-content-negotiation:2.3.11")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.11")
-}
+sudo apt update
+sudo apt install -y make git tar gzip crossbuild-essential-arm64
 
-💻 Código en Kotlin para la Aplicación de Terminal
-Este código realiza el flujo completo: se autentica de forma anónima, busca el contenido de la imagen de Debian y descarga la capa del sistema de archivos.
+⚠️ Nota sobre el NDK: El script build-proot-android generalmente requiere que exportes la ruta de un Android NDK descargado para usar clang de Android. Puedes descargar una versión ligera del NDK en tu Codespace mediante wget.
 
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.engine.cio.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.serialization.kotlinx.json.*
-import io.ktor.utils.io.*
-import io.ktor.utils.io.core.*
-import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import java.io.File
+Paso 2: Clonar los Repositorios de Forma Estructurada
+Siguiendo la filosofía de mantener el entorno limpio, clonaremos el script automatizado y el código fuente de PRoot.
 
-// Modelos de datos para el API de Docker
-@Serializable data class TokenResponse(val token: String)
-@Serializable data class DockerLayer(val digest: String, val size: Long)
-@Serializable data class DockerManifest(val schemaVersion: Int, val layers: List<DockerLayer>)
+# 1. Clonar el script de compilación automatizado de la comunidad
+git clone https://github.com/green-green-avk/build-proot-android.git
+cd build-proot-android
 
-// Endpoints globales de la infraestructura de Docker Hub
-private const val AUTH_URL = "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/debian:pull"
-private const val REGISTRY_BASE_URL = "https://registry-1.docker.io/v2"
+# 2. El script ya suele encargarse de traer las dependencias como libtalloc
+# y el código de PRoot, pero si necesitas modificar el código fuente de PRoot
+# para aplicar las mejoras, localiza la carpeta donde el script descarga el submódulo
+# o clónalo manualmente si vas a parchear de forma directa:
+git clone https://github.com/proot-me/proot.git proot-src
 
-fun main() = runBlocking {
-    val client = HttpClient(CIO) {
-        install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true })
-        }
-    }
+Paso 3: Aplicar Mejoras de Rendimiento (Puntos Críticos)
+Antes de ejecutar la compilación, debes editar los archivos fuente en proot-src (o el directorio que use el script) para implementar las optimizaciones de arquitectura:
+Reducción del Overhead de ptrace + Filtros SECCOMP: Modifica el bucle de eventos principal (usualmente en src/tracee/tracee.c o src/process/inspect.c). Debes integrar BPF (Berkeley Packet Filters) para que el kernel intercepte solo las syscalls de manipulación de rutas (openat, execve, mount) y devuelva un PTRACE_EVENT_SECCOMP, ignorando llamadas de alta frecuencia como read o write.
+Compatibilidad con Syscalls Modernas: Revisa el archivo de traducción de llamadas del sistema (frecuentemente en src/syscall/). Asegúrate de mapear y manejar explícitamente openat2, clone3 y pidfd_open, ya que las aplicaciones modernas en entornos Android nuevos las ejecutan por defecto.
+Evitar Deadlocks en Multithreading: Revisa la gestión de bloqueos (muteces) en las tablas de traducción de rutas globales (src/extension/). Implementa bloqueos de lectura/escritura (pthread_rwlock_t) en lugar de exclusiones mutuas globales (pthread_mutex_t) para que múltiples hilos lean las rutas concurrentemente sin encolarse.
 
-    val repository = "library/debian"
-    // Usamos la etiqueta "latest" o tu hash específico para apuntar al manifiesto correcto
-    val tagOrDigest = "latest" 
+Paso 4: Ejecución del Script de Compilación
+El script de green-green-avk está diseñado para enlazar libtalloc de forma estática para que no rompa el linker de Android (linker64). Ejecuta el flujo de compilación apuntando a ARM64:
 
-    // 1. Obtener Token Autenticación
-    println("1. 🔑 Solicitando token de acceso público a Docker Hub...")
-    val tokenResponse: TokenResponse = client.get(AUTH_URL).body()
-    val token = tokenResponse.token
+# Configura las variables de entorno para el script (ajusta según los requisitos del script)
+export ARCH=arm64
+# Ejecuta el compilador automatizado
+./build.sh
 
-    // 2. Obtener el Manifest con las capas
-    println("2. 📄 Obteniendo las capas (layers) de la imagen...")
-    val manifestUrl = "$REGISTRY_BASE_URL/$repository/manifests/$tagOrDigest"
+Paso 5: El "Truco" del Empaquetado como .so
+Android no permite la ejecución directa de binarios sueltos desde los recursos de la app fácilmente debido a restricciones de seguridad recientes (SELinux y restricciones de ejecución en /data/data). La solución estándar es engañar al instalador de Android:
+
+Al finalizar la compilación, obtendrás un archivo binario ejecutable llamado proot.
+
+Renombra el binario: Cambia el nombre del archivo para que empiece por lib y termine en .so.
+
+mv proot libproot.so
+
+Ubicación en tu proyecto (Android Code Studio / Kotlin):
+Coloca este archivo libproot.so en la carpeta correspondiente a la arquitectura de tu aplicación:
+src/main/jniLibs/arm64-v8a/libproot.so
+
+💡 ¿Por qué funciona esto? Al empaquetarlo en jniLibs con el prefijo lib y la extensión .so, el sistema de Android lo extraerá automáticamente durante la instalación en el directorio de bibliotecas nativas de la aplicación (context.applicationInfo.nativeLibraryDir), el cual sí tiene permisos de ejecución (chmod +x).
+
+Paso 6: Ejecución desde tu Código (Kotlin Compose)
+Cuando necesites iniciar el entorno virtualizado de PRoot desde tu aplicación, no lo cargues con System.loadLibrary(), ya que no contiene código JNI tradicional. En su lugar, invócalo como un proceso ejecutable desde su ruta nativa:
+fun ejecutarPRoot(context: Context) {
+    val nativeDir = context.applicationInfo.nativeLibraryDir
+    val prootPath = "$nativeDir/libproot.so"
     
-    val manifestHttpResponse = client.get(manifestUrl) {
-        header("Authorization", "Bearer $token")
-        header("Accept", "application/vnd.docker.distribution.manifest.v2+json")
-    }
+    // Configura el comando con los parámetros necesarios para PRoot
+    val command = listOf(prootPath, "-r", "/ruta/a/tu/rootfs", "/bin/sh")
     
-    if (manifestHttpResponse.status.value != 200) {
-        println("❌ Error al obtener el manifiesto: ${manifestHttpResponse.status}")
-        client.close()
-        return@runBlocking
-    }
-
-    val manifest: DockerManifest = manifestHttpResponse.body()
-    println("3. 🗜️ Se encontraron ${manifest.layers.size} capa(s) para descargar.")
-    
-    // 3. Descargar capas aplicando DRY (reutilizando la función de streaming)
-    manifest.layers.forEachIndexed { index, layer ->
-        val blobUrl = "$REGISTRY_BASE_URL/$repository/blobs/${layer.digest}"
-        val outputFile = File("debian-layer-$index.tar.gz")
-        
-        println("Descargando capa [${index + 1}/${manifest.layers.size}]: ${layer.digest}")
-        
-        downloadBlobWithStreaming(client, blobUrl, token, outputFile)
-    }
-    
-    println("\n🎉 ¡Descarga completada! Tienes el sistema de archivos raíz listo.")
-    client.close()
-}
-
-/**
- * Función utilitaria y reutilizable para descargar flujos de datos grandes (Blobs).
- * Mantiene el código DRY al abstraer el manejo del ByteReadChannel.
- */
-private suspend fun downloadBlobWithStreaming(client: HttpClient, url: String, token: String, targetFile: File) {
-    client.prepareGet(url) {
-        header("Authorization", "Bearer $token")
-    }.execute { response ->
-        if (response.status.value != 200) {
-            println("❌ Error al descargar capa: ${response.status}")
-            return@execute
-        }
-
-        val channel: ByteReadChannel = response.bodyAsChannel()
-        targetFile.outputStream().use { output ->
-            while (!channel.isClosedForRead) {
-                val packet = channel.readRemaining(DEFAULT_BUFFER_SIZE.toLong())
-                while (!packet.isEmpty) {
-                    val bytes = packet.readBytes()
-                    output.write(bytes)
-                }
-            }
-        }
-        println("✅ Capa guardada con éxito en: ${targetFile.absolutePath}")
-    }
+    val processBuilder = ProcessBuilder(command)
+    // Redirigir flujos de entrada/salida según sea necesario
+    val process = processBuilder.start()
 }
