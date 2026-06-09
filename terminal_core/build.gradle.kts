@@ -32,13 +32,6 @@ android {
         }
     }
 
-    // Asegura que Gradle incluya jniLibs en el empaquetado del módulo
-    sourceSets {
-        getByName("main") {
-            jniLibs.srcDirs("src/main/jniLibs")
-        }
-    }
-    
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

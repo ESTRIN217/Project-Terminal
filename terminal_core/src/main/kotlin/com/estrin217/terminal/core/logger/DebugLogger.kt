@@ -19,6 +19,8 @@ object DebugLogger {
     private val logs = mutableListOf<LogEntry>()
     private val maxLogs = 5000 // Máximo de logs en memoria
     private val logLock = Any()
+    @Volatile
+    var verbose: Boolean = false
 
     data class LogEntry(
     val timestamp: String,

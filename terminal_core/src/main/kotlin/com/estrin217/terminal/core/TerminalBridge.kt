@@ -105,7 +105,7 @@ open class TerminalBridge(
         // Show soft keyboard on click
         terminalView?.let { view ->
             val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
-            imm?.showSoftInput(view, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+            imm?.showSoftInput(view, 0)
         }
     }
 

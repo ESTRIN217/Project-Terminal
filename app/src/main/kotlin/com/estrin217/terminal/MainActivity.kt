@@ -34,6 +34,7 @@ import com.estrin217.terminal.core.TerminalBridge
 import com.estrin217.terminal.core.TerminalConfig
 import com.estrin217.terminal.core.TerminalService
 import com.estrin217.terminal.core.logger.DebugLogger
+import com.estrin217.terminal.core.ConnectivityUtils
 import com.estrin217.terminal.logger.LoggerActivity
 import com.termux.terminal.TerminalSession
 import com.termux.view.TerminalView
@@ -137,6 +138,10 @@ class MainActivity : ComponentActivity() {
 
         DebugLogger.i(TAG, "MainActivity created with Jetpack Compose UI")
 
+        // Log current network state at startup
+        val hasNet = ConnectivityUtils.hasInternet(this)
+        DebugLogger.i(TAG, "Network available at startup: $hasNet")
+
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
@@ -179,7 +184,7 @@ class MainActivity : ComponentActivity() {
                 } catch (e: IOException) {
                     DebugLogger.e(TAG, "Error during rootfs extraction", e)
                     runOnUiThread {
-                        isInstallingState.value = LocaleManager.getString("extraction_error", e.message ?: "")
+                        progressTextState.value = LocaleManager.getString("extraction_error", e.message ?: "")
                         Toast.makeText(this@MainActivity, LocaleManager.getString("install_error_toast", e.message ?: ""), Toast.LENGTH_LONG).show()
                     }
                 }
@@ -427,7 +432,7 @@ class MainActivity : ComponentActivity() {
                     onClick = {
                         terminalViewInstance?.requestFocus()
                         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-                        imm?.showSoftInput(terminalViewInstance, InputMethodManager.SHOW_IMPLICIT)
+                        imm?.showSoftInput(terminalViewInstance, 0)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2D30)),
                     modifier = Modifier.widthIn(min = 60.dp)
@@ -479,6 +484,26 @@ class MainActivity : ComponentActivity() {
             isBound = false
         }
         super.onDestroy()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        DebugLogger.i(TAG, "MainActivity onStart")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        DebugLogger.i(TAG, "MainActivity onResume")
+    }
+
+    override fun onPause() {
+        DebugLogger.i(TAG, "MainActivity onPause")
+        super.onPause()
+    }
+
+    override fun onStop() {
+        DebugLogger.i(TAG, "MainActivity onStop")
+        super.onStop()
     }
 
     companion object {

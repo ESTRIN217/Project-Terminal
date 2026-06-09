@@ -28,6 +28,16 @@ class TerminalService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+
+        // Ensure native library is available and log lifecycle
+        com.estrin217.terminal.core.logger.DebugLogger.i("TerminalService", "onCreate invoked")
+        val loaded = TerminalCore.ensureLoaded(this)
+        if (loaded) {
+            com.estrin217.terminal.core.logger.DebugLogger.i("TerminalService", "Native libraries loaded successfully")
+        } else {
+            com.estrin217.terminal.core.logger.DebugLogger.e("TerminalService", "Native libraries failed to load")
+        }
+
         startForeground(NOTIFICATION_ID, buildNotification())
     }
 

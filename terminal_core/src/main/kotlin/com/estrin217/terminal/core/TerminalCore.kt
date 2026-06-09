@@ -14,9 +14,23 @@ class TerminalCore {
     external fun setTerminalSize(fd: Int, rows: Int, cols: Int, widthPx: Int, heightPx: Int)
 
     companion object {
-        // Used to load the 'terminal_core' library on application startup.
+        // Try to load the 'terminal_core' library on class init, but fail gracefully.
         init {
-            System.loadLibrary("terminal_core")
+            try {
+                System.loadLibrary("terminal_core")
+            } catch (e: UnsatisfiedLinkError) {
+                // Defer to explicit installer if automatic load fails
+                com.estrin217.terminal.core.logger.DebugLogger.w("TerminalCore", "Automatic System.loadLibrary failed: ${e.message}")
+            } catch (e: Exception) {
+                com.estrin217.terminal.core.logger.DebugLogger.e("TerminalCore", "Unexpected error during System.loadLibrary", e)
+            }
+        }
+
+        /**
+         * Explicit loader that can be invoked from a Context-aware component.
+         */
+        fun ensureLoaded(context: android.content.Context): Boolean {
+            return NativeLibInstaller.ensureNativeLib(context, "terminal_core")
         }
     }
 }

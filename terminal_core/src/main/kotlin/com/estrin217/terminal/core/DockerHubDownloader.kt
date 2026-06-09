@@ -13,8 +13,7 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.readRemaining
-import io.ktor.utils.io.core.readBytes
-import io.ktor.utils.io.core.isEmpty
+import io.ktor.utils.io.core.readAvailable
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -62,19 +61,7 @@ internal object DockerHubDownloader {
     )
 
     private fun isNetworkAvailable(context: Context): Boolean {
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
-        if (connectivityManager != null) {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                val network = connectivityManager.activeNetwork ?: return false
-                val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-                return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            } else {
-                @Suppress("DEPRECATION")
-                val activeNetworkInfo = connectivityManager.activeNetworkInfo
-                return activeNetworkInfo != null && activeNetworkInfo.isConnected
-            }
-        }
-        return false
+        return ConnectivityUtils.hasInternet(context)
     }
 
     suspend fun downloadFromDockerHub(context: Context, image: String, tag: String): File {
@@ -90,6 +77,9 @@ internal object DockerHubDownloader {
 
         try {
             HttpClient(CIO) {
+                install(NetworkStatusPlugin) {
+                    applicationContext = context
+                }
                 install(ContentNegotiation) {
                     json(json)
                 }
@@ -205,13 +195,15 @@ internal object DockerHubDownloader {
         val channel = response.bodyAsChannel()
         try {
             targetFile.outputStream().use { output ->
+                val buffer = ByteArray(8192)
                 var bytesWritten = 0L
                 while (true) {
                     val packet = channel.readRemaining(8192L)
-                    if (packet.isEmpty) break
-                    val bytes = packet.readBytes()
-                    output.write(bytes)
-                    bytesWritten += bytes.size
+                    if (packet.exhausted()) break
+                    val bytesRead = packet.readAvailable(buffer)
+                    if (bytesRead <= 0) break
+                    output.write(buffer, 0, bytesRead)
+                    bytesWritten += bytesRead
                 }
                 com.estrin217.terminal.core.logger.DebugLogger.i("DockerHubDownloader", "Streaming complete. Total bytes written: $bytesWritten")
             }
