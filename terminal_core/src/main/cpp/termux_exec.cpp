@@ -7,7 +7,9 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-#define INTERNAL_NATIVE_LIB_DIR "/data/app/com.estrin217.terminal"
+#define EI_CLASS 4
+#define ELFCLASS32 1
+#define ELFCLASS64 2
 
 static int is_elf(const char* filename) {
     if (!filename) return 0;
@@ -19,8 +21,27 @@ static int is_elf(const char* filename) {
     return (n == 4 && magic[0] == 0x7F && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F');
 }
 
+static int get_elf_class(const char* filename) {
+    if (!filename) return 0;
+    FILE* f = fopen(filename, "rb");
+    if (!f) return 0;
+    unsigned char ident[16];
+    int n = fread(ident, 1, 16, f);
+    fclose(f);
+    if (n < 16) return 0;
+    if (ident[0] != 0x7F || ident[1] != 'E' || ident[2] != 'L' || ident[3] != 'F') return 0;
+    return ident[EI_CLASS];
+}
+
 static int is_under_proot_rootfs(const char* filename) {
-    return filename && strstr(filename, "/usr/") != NULL;
+    if (!filename) return 0;
+    if (strncmp(filename, "/system/", 8) == 0) return 0;
+    if (strncmp(filename, "/apex/", 6) == 0) return 0;
+    if (strncmp(filename, "/dev/", 5) == 0) return 0;
+    if (strncmp(filename, "/proc/", 6) == 0) return 0;
+    if (strncmp(filename, "/sys/", 5) == 0) return 0;
+    if (strncmp(filename, "/data_priv/", 11) == 0) return 0;
+    return 1;
 }
 
 int execve(const char* filename, char* const argv[], char* const envp[]) {
@@ -37,7 +58,13 @@ int execve(const char* filename, char* const argv[], char* const envp[]) {
         return syscall(__NR_execve, filename, argv, envp);
     }
 
-    const char* linker = "/system/bin/linker64";
+    int elf_class = get_elf_class(filename);
+    const char* linker;
+    if (elf_class == ELFCLASS32) {
+        linker = "/system/bin/linker";
+    } else {
+        linker = "/system/bin/linker64";
+    }
 
     int arg_count = 0;
     if (argv) {

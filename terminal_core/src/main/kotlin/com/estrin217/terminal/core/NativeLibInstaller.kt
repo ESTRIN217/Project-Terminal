@@ -8,6 +8,41 @@ import java.io.FileOutputStream
 import java.util.zip.ZipFile
 
 object NativeLibInstaller {
+    private const val TERMUX_EXEC_LIB = "libtermux_exec.so"
+    private const val DATA_LIB_DIR = "lib"
+
+    fun ensureTermuxExecLib(context: Context): Boolean {
+        try {
+            val nativeLibDir = context.applicationInfo.nativeLibraryDir
+            if (nativeLibDir == null) {
+                DebugLogger.e("NativeLibInstaller", "nativeLibraryDir is null")
+                return false
+            }
+
+            val sourceFile = File(nativeLibDir, TERMUX_EXEC_LIB)
+            if (!sourceFile.exists()) {
+                DebugLogger.w("NativeLibInstaller", "$TERMUX_EXEC_LIB not found in $nativeLibDir")
+                return false
+            }
+
+            val dataLibDir = File(context.applicationInfo.dataDir, DATA_LIB_DIR)
+            if (!dataLibDir.exists()) {
+                dataLibDir.mkdirs()
+            }
+
+            val targetFile = File(dataLibDir, TERMUX_EXEC_LIB)
+            sourceFile.copyTo(targetFile, overwrite = true)
+            targetFile.setExecutable(true)
+            targetFile.setReadable(true, false)
+
+            DebugLogger.i("NativeLibInstaller", "Copied $TERMUX_EXEC_LIB to ${targetFile.absolutePath}")
+            return true
+        } catch (e: Exception) {
+            DebugLogger.e("NativeLibInstaller", "Failed to copy $TERMUX_EXEC_LIB", e)
+            return false
+        }
+    }
+
     fun ensureNativeLib(context: Context, libName: String): Boolean {
         try {
             System.loadLibrary(libName)

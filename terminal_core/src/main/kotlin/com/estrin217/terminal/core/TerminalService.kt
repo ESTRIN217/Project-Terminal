@@ -45,6 +45,13 @@ class TerminalService : Service() {
             DebugLogger.e("TerminalService", "Native libraries failed to load")
         }
 
+        val termuxExecOk = NativeLibInstaller.ensureTermuxExecLib(this)
+        if (termuxExecOk) {
+            DebugLogger.i("TerminalService", "libtermux_exec.so deployed for LD_PRELOAD")
+        } else {
+            DebugLogger.w("TerminalService", "libtermux_exec.so not deployed - W^X bypass may not work")
+        }
+
         acquireWakeLock()
         acquireWifiLock()
 
