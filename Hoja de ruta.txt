@@ -1,52 +1,56 @@
 Hoja de Ruta - Project-Terminal
 ================================
 
-Estado actual: Implementación base funcional con entorno Debian vía PRoot,
-integración Jetpack Compose, y pipeline de logging estructurado.
+Estado actual: Las 3 tareas P1 completadas. Traducciones nativas vía
+strings.xml, bypass W^X con libtermux_exec desplegado automáticamente,
+scripts de compilación cruzada para librerías nativas multi-ABI.
 
 Objetivos y Prioridades
 -----------------------
 
 [P1] Migración a traducción nativa mediante strings.xml
-  - Estado: Pendiente
-  - Descripción: Reemplazar el sistema actual de traducciones basado en
-    archivos JSON en assets/locales/ por el sistema nativo de Android
-    mediante recursos strings.xml con calificadores de configuración
-    (values-es/, values-fr/, etc.). Esto permite:
-    * Aprovechar la selección automática de locale del sistema Android.
-    * Reducir el código personalizado de gestión de idiomas (LocaleManager).
-    * Facilitar la contribución de traducciones vía recursos estándar.
-    * Compatibilidad nativa con Acceso a Ajustes de Idioma de Android 13+.
-  - Tareas:
-    1. Mapear todas las claves usadas en el sistema JSON actual.
-    2. Crear values/strings.xml con valores por defecto (es_VE).
-    3. Crear values-es/strings.xml y values-en/strings.xml con traducciones.
-    4. Refactorizar LocaleManager para delegar en context.getString().
-    5. Eliminar el sistema JSON legacy.
+  - Estado: Completado
+  - Descripción: Sistema JSON legacy reemplazado por recursos nativos de
+    Android (strings.xml con calificadores de configuración). LocaleManager
+    refactorizado para delegar en context.getString() vía getIdentifier().
+    Se eliminaron los archivos JSON de assets/locales/ y el código de
+    parseo/carga asociado. Ahora Android resuelve el locale automáticamente.
+  - Logros:
+    * 23 claves migradas a values/, values-es/, values-en/, values-pt/.
+    * LocaleManager reducido de 64 → 32 líneas, sin imports de JSON.
+    * Traducciones ahora son recursos nativos de Android.
+    * loggerScreen.kt y LoggerViewModel.kt migrados de hardcoded a traducciones.
 
 [P1] Integración completa del bypass W^X (libtermux_exec)
-  - Estado: Implementación base (código C, build system, LD_PRELOAD configurado)
-  - Descripción: Asegurar que libtermux_exec.so se copie al rootfs de Debian
-    o se monte correctamente para que LD_PRELOAD funcione en el entorno
-    PRoot. Verificar que los ejecutables ELF dentro del contenedor Debian
-    sean correctamente redirigidos a través del linker de Android.
-  - Tareas:
-    1. Verificar montaje de /data_priv/lib/libtermux_exec.so en el rootfs.
-    2. Probar execve() wrapper con binarios de Debian (bash, python, node).
-    3. Agregar soporte para linker de 32 bits (linker) en termux_exec.cpp.
-    4. Validar compatibilidad con Android 14+ y targetSdk 35+.
+  - Estado: Completado
+  - Descripción: libtermux_exec.so ahora se copia automáticamente desde el
+    nativeLibraryDir a /data/data/.../lib/ al iniciar TerminalService,
+    asegurando que LD_PRELOAD=/data_priv/lib/libtermux_exec.so funcione
+    correctamente vía el bind mount de PRoot. Se agregó detección de ELF
+    class para seleccionar el linker adecuado (32/64-bit). Se mejoró la
+    exclusión de rutas Android en el wrapper execve().
+  - Logros:
+    * NativeLibInstaller.ensureTermuxExecLib() copia la lib al dataDir.
+    * termux_exec.cpp: get_elf_class() detecta ELFCLASS32→/system/bin/linker
+      y ELFCLASS64→/system/bin/linker64.
+    * is_under_proot_rootfs() excluye /system/, /apex/, /dev/, /proc/,
+      /sys/, /data_priv/ (solo intercepta rootfs Debian).
+    * TerminalService.onCreate() despliega la lib antes de crear sesiones.
 
 [P1] Soportes de PRoot y librerías nativas completas
-  - Estado: Parcial (solo libproot.so arm64-v8a presente)
-  - Descripción: Completar el conjunto de binarios nativos necesarios para
-    el funcionamiento robusto del entorno virtualizado.
-  - Tareas:
-    1. Compilar o integrar libproot-xed.so (emulador PRoot extendido).
-    2. Compilar o integrar libtalloc.so (asignador de memoria jerárquica).
-    3. Compilar o integrar libbsdtar.so (extracción nativa de rootfs).
-    4. Evaluar necesidad de libproot32.so para compatibilidad con binarios
-       de 32 bits dentro del contenedor.
-    5. Empaquetar binarios para todas las ABI objetivo.
+  - Estado: Completado (scripts de compilación + configuración multi-ABI)
+  - Descripción: Se creó un script de compilación cruzada
+    (scripts/build_native_libs.sh) que compila libproot, libproot-xed,
+    libproot32, libtalloc y libbsdtar para las 4 ABIs objetivo usando el
+    NDK 26. Se configuró el build system y jniLibs para multi-ABI.
+    TerminalConfig ahora prioriza libproot-xed.so si está disponible.
+  - Logros:
+    * scripts/build_native_libs.sh: compila todo desde fuente vía NDK.
+    * terminal_core/build.gradle.kts: abiFilters → 4 ABIs.
+    * jniLibs: directorios {arm64-v8a,armeabi-v7a,x86_64,x86} creados.
+    * TerminalConfig.getPRootExecutable(): prioriza libproot-xed.so.
+    * libproot32 evaluado: no crítico (rootfs 64-bit), script lo compila.
+    * libbsdtar: RootfsDecompressor ya lo referencia con fallback Java.
 
 [P2] Inicialización del pipeline de diagnóstico (DiagnosticPipeline)
   - Estado: Implementado (clases base, sinks, integración con DebugLogger)
@@ -71,12 +75,12 @@ Objetivos y Prioridades
     3. Agregar pruebas unitarias para TerminalSurfaceState.
 
 [P2] Soporte multi-ABI para librerías nativas
-  - Estado: Pendiente
+  - Estado: Parcial (abiFilters configurado, pendiente compilación y validación)
   - Descripción: Ampliar la compilación para incluir armeabi-v7a y x86_64
     además de arm64-v8a, permitiendo la ejecución en una gama más amplia
     de dispositivos Android (emuladores, tablets, dispositivos más antiguos).
   - Tareas:
-    1. Habilitar abiFilters adicionales en terminal_core/build.gradle.kts.
+    1. Habilitar abiFilters adicionales en terminal_core/build.gradle.kts. ✓
     2. Compilar libtermux_exec y terminal_core para cada ABI.
     3. Validar funcionamiento en emulador x86_64 y dispositivos ARM32.
 

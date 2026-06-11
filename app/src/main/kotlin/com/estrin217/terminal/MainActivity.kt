@@ -114,7 +114,6 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        DebugLogger.initCrashHandler(this)
         LocaleManager.init(applicationContext)
         super.onCreate(savedInstanceState)
 

@@ -158,6 +158,12 @@ fun LoggerScreen(
                     Text(LocaleManager.getString("export"), fontSize = 11.sp)
                 }
 
+                OutlinedButton(onClick = { viewModel.exportDiagnosticLog() }, modifier = buttonModifier, contentPadding = PaddingValues(4.dp)) {
+                    Icon(Icons.Outlined.BugReport, contentDescription = "Export Diag", modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Export Diag", fontSize = 11.sp)
+                }
+
                 Button(
                     onClick = { showClearDialog = true },
                     modifier = buttonModifier,

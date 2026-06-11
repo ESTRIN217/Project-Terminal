@@ -7,6 +7,7 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
+import com.estrin217.terminal.TerminalApplication
 import com.estrin217.terminal.core.LocaleManager
 import com.estrin217.terminal.core.logger.DebugLogger
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -89,7 +90,11 @@ class LoggerViewModel : ViewModel() {
     }
 
     fun clearAllLogs() {
-        DebugLogger.clearLogs() // [cite: 35]
-        refreshLogs() // [cite: 35]
+        DebugLogger.clearLogs()
+        refreshLogs()
+    }
+
+    fun exportDiagnosticLog() {
+        TerminalApplication.instance.exportDiagnosticLogToShared()
     }
 }

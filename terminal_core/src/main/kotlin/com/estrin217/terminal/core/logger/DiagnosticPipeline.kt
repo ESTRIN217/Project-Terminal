@@ -42,6 +42,13 @@ object DiagnosticPipeline {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val activeSinks = mutableListOf<DiagnosticSink>()
 
+    private val processPid: String = android.os.Process.myPid().toString()
+    private var sessionId: String = "unknown"
+
+    fun setSessionId(id: String) {
+        sessionId = id
+    }
+
     init {
         scope.launch {
             logChannel.consumeAsFlow().collect { logEntry ->
@@ -67,6 +74,7 @@ object DiagnosticPipeline {
         throwable: Throwable? = null,
         metadata: Map<String, String> = emptyMap()
     ) {
+        val enrichedMeta = metadata + mapOf("session" to sessionId, "pid" to processPid)
         val entry = DiagnosticLog(
             timestamp = System.currentTimeMillis(),
             component = component,
@@ -74,7 +82,7 @@ object DiagnosticPipeline {
             threadName = Thread.currentThread().name,
             message = message(),
             exception = throwable,
-            metadata = metadata
+            metadata = enrichedMeta
         )
         logChannel.trySend(entry)
     }
@@ -86,6 +94,7 @@ object DiagnosticPipeline {
         throwable: Throwable? = null,
         metadata: Map<String, String> = emptyMap()
     ) {
+        val enrichedMeta = metadata + mapOf("session" to sessionId, "pid" to processPid)
         val entry = DiagnosticLog(
             timestamp = System.currentTimeMillis(),
             component = component,
@@ -93,17 +102,22 @@ object DiagnosticPipeline {
             threadName = Thread.currentThread().name,
             message = message,
             exception = throwable,
-            metadata = metadata
+            metadata = enrichedMeta
         )
         runCatching { logChannel.trySend(entry) }
     }
 }
 
-class DiskSink(private val file: File) : DiagnosticSink {
+class DiskSink(
+    private val file: File,
+    private val maxFileSize: Long = 5 * 1024 * 1024,
+    private val maxRotatedFiles: Int = 3
+) : DiagnosticSink {
     private val format = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
 
     override fun dispatch(log: DiagnosticLog) {
         try {
+            rotateIfNeeded()
             FileWriter(file, true).use { fw ->
                 PrintWriter(fw).use { pw ->
                     val timestampStr = format.format(Date(log.timestamp))
@@ -123,6 +137,30 @@ class DiskSink(private val file: File) : DiagnosticSink {
         } catch (e: Exception) {
             Log.e("DiskSink", "Error writing to diagnostic log file", e)
         }
+    }
+
+    private fun rotateIfNeeded() {
+        if (!file.exists() || file.length() < maxFileSize) return
+
+        val parent = file.parentFile ?: return
+        val baseName = file.nameWithoutExtension
+        val ext = file.extension
+
+        for (i in maxRotatedFiles - 1 downTo 1) {
+            val older = File(parent, "${baseName}.$i.$ext")
+            val newer = File(parent, "${baseName}.${i + 1}.$ext")
+            if (older.exists()) older.renameTo(newer)
+        }
+
+        val first = File(parent, "${baseName}.1.$ext")
+        file.renameTo(first)
+    }
+
+    fun getCurrentLogFile(): File = file
+
+    companion object {
+        const val DEFAULT_MAX_SIZE = 5L * 1024 * 1024
+        const val DEFAULT_MAX_ROTATED = 3
     }
 }
 
