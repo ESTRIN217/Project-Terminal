@@ -165,4 +165,25 @@ object RootfsManager {
 
         tarIn.close()
     }
+    /**
+    * Importa un archivo rootfs externo desde un InputStream (por ejemplo, desde el almacenamiento local).
+    */
+    @Throws(IOException::class)
+    fun importCustomRootfs(context: Context, inputStream: InputStream, progressCallback: (Int) -> Unit = {}) {
+    val rootfsDir = TerminalConfig.getRootfsDir(context)
+    if (rootfsDir.exists()) {
+        rootfsDir.deleteRecursively()
+    }
+    rootfsDir.mkdirs()
+
+    // Llamamos internamente a la extracción sin problemas de visibilidad
+    extractTarArchive(inputStream, rootfsDir, progressCallback)
+
+    // Estructuras base obligatorias
+    File(rootfsDir, "home/programador").mkdirs()
+    File(rootfsDir, "tmp").mkdirs()
+    
+    // Crear el marcador para que la app sepa que está listo
+    TerminalConfig.getMarkerFile(context).createNewFile()
+    }
 }

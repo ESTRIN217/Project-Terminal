@@ -76,36 +76,25 @@ class MainActivity : ComponentActivity() {
             DebugLogger.i(TAG, "Selected rootfs URI: $uri")
             isInstallingState.value = true
             progressTextState.value = "Importing..."
-
             Thread {
                 try {
-                    // Copy to temp directory and extract
                     val tempFile = File(cacheDir, "imported_rootfs.tar.xz")
                     contentResolver.openInputStream(uri)?.use { input ->
-                        tempFile.outputStream().use { output ->
-                            input.copyTo(output)
-                        }
+                    tempFile.outputStream().use { output ->
+                    input.copyTo(output)
                     }
-                    
-                    val rootfsDir = TerminalConfig.getRootfsDir(this)
-                    if (rootfsDir.exists()) {
-                        rootfsDir.deleteRecursively()
-                    }
-                    rootfsDir.mkdirs()
-                    
-                    // RootfsManager logic for extracting standard tar input streams
-                    java.io.FileInputStream(tempFile).use { fileStream ->
-                        RootfsManager.extractTarArchive(fileStream, rootfsDir) { count ->
-                            runOnUiThread {
-                                progressTextState.value = LocaleManager.getString("extracted_count", count)
-                            }
-                        }
-                    }
+        }
+        
+        // Ahora solo invocas el nuevo método unificado
+        java.io.FileInputStream(tempFile).use { fileStream ->
+            RootfsManager.importCustomRootfs(this@MainActivity, fileStream) { count ->
+                runOnUiThread {
+                    progressTextState.value = LocaleManager.getString("extracted_count", count)
+                }
+            }
+        }
 
-                    File(rootfsDir, "home/programador").mkdirs()
-                    File(rootfsDir, "tmp").mkdirs()
-                    TerminalConfig.getMarkerFile(this).createNewFile()
-                    tempFile.delete()
+        tempFile.delete()
 
                     DebugLogger.i(TAG, "Import completed successfully")
                     runOnUiThread {
