@@ -34,8 +34,13 @@ object TerminalConfig {
      */
     fun getPRootExecutable(context: Context): File {
         val nativeDir = context.applicationInfo.nativeLibraryDir ?: "${context.applicationInfo.dataDir}/lib"
+        val xedFile = File(nativeDir, "libproot-xed.so")
+        if (xedFile.exists()) {
+            com.estrin217.terminal.core.logger.DebugLogger.i("TerminalConfig", "Using extended PRoot: ${xedFile.absolutePath}")
+            return xedFile
+        }
         val prootFile = File(nativeDir, "libproot.so")
-        com.estrin217.terminal.core.logger.DebugLogger.i("TerminalConfig", "Forced native proot executable path: ${prootFile.absolutePath}")
+        com.estrin217.terminal.core.logger.DebugLogger.i("TerminalConfig", "Using standard PRoot: ${prootFile.absolutePath}")
         return prootFile
     }
 
