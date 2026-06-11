@@ -39,6 +39,11 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 // Reemplazo moderno de 'kotlinOptions': Ahora se configura de forma global a nivel de bloque kotlin

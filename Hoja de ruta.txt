@@ -58,6 +58,7 @@ Objetivos y Prioridades
     2. Integrar DiagnosticPipeline con la pantalla LoggerScreen.
     3. Agregar metadata de contexto (componente, sesión, PID) a los logs.
     4. Implementar rotación de archivos de log en DiskSink.
+    5. hacer que la app guarde un archivo log en el almacenamiento compartido
 
 [P2] TerminalSurfaceState como envoltura Compose oficial
   - Estado: Implementado (TerminalSurfaceState, TerminalSurface, rememberTerminalSurfaceState)

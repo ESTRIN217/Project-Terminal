@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.estrin217.terminal.core.LocaleManager
 import com.estrin217.terminal.core.logger.DebugLogger
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,16 +42,16 @@ fun LoggerScreen(
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text("Clear Logs?") },
-            text = { Text("Are you sure you want to clear all logs?") },
+            title = { Text(LocaleManager.getString("clear_logs_title")) },
+            text = { Text(LocaleManager.getString("clear_logs_desc")) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.clearAllLogs()
                     showClearDialog = false
-                }) { Text("Yes") }
+                }) { Text(LocaleManager.getString("yes")) }
             },
             dismissButton = {
-                TextButton(onClick = { showClearDialog = false }) { Text("No") }
+                TextButton(onClick = { showClearDialog = false }) { Text(LocaleManager.getString("no")) }
             }
         )
     }
@@ -58,7 +59,7 @@ fun LoggerScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Debug Logger", style = MaterialTheme.typography.titleLarge) },
+                title = { Text(LocaleManager.getString("debug_logger_title"), style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onBackPressed) {
                         // Cambiado a la variante Outrored de AutoMirrored
@@ -94,7 +95,7 @@ fun LoggerScreen(
 
             // Filtro por Chips Horizontales (Sustituye al clásico Spinner de forma limpia) 
             Text(
-                text = "Filter Level:",
+                text = LocaleManager.getString("filter_level"),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 4.dp)
@@ -140,21 +141,21 @@ fun LoggerScreen(
                 val buttonModifier = Modifier.weight(1f)
 
                 OutlinedButton(onClick = { viewModel.refreshLogs() }, modifier = buttonModifier, contentPadding = PaddingValues(4.dp)) {
-                    Icon(Icons.Outlined.Refresh, contentDescription = "Refresh", modifier = Modifier.size(18.dp))
+                    Icon(Icons.Outlined.Refresh, contentDescription = LocaleManager.getString("refresh"), modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Refresh", fontSize = 11.sp)
+                    Text(LocaleManager.getString("refresh"), fontSize = 11.sp)
                 }
 
                 OutlinedButton(onClick = { viewModel.copyLogsToClipboard(context) }, modifier = buttonModifier, contentPadding = PaddingValues(4.dp)) {
-                    Icon(Icons.Outlined.Share, contentDescription = "Copy", modifier = Modifier.size(18.dp))
+                    Icon(Icons.Outlined.Share, contentDescription = LocaleManager.getString("copy"), modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Copy", fontSize = 11.sp)
+                    Text(LocaleManager.getString("copy"), fontSize = 11.sp)
                 }
 
                 OutlinedButton(onClick = { viewModel.exportAndShareLogs(context) }, modifier = buttonModifier, contentPadding = PaddingValues(4.dp)) {
-                    Icon(Icons.Outlined.Email, contentDescription = "Export", modifier = Modifier.size(18.dp))
+                    Icon(Icons.Outlined.Email, contentDescription = LocaleManager.getString("export"), modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Export", fontSize = 11.sp)
+                    Text(LocaleManager.getString("export"), fontSize = 11.sp)
                 }
 
                 Button(
@@ -163,9 +164,9 @@ fun LoggerScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     contentPadding = PaddingValues(4.dp)
                 ) {
-                    Icon(Icons.Outlined.Delete, contentDescription = "Clear", modifier = Modifier.size(18.dp))
+                    Icon(Icons.Outlined.Delete, contentDescription = LocaleManager.getString("clear"), modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Clear", fontSize = 11.sp, color = MaterialTheme.colorScheme.onError)
+                    Text(LocaleManager.getString("clear"), fontSize = 11.sp, color = MaterialTheme.colorScheme.onError)
                 }
             }
         }

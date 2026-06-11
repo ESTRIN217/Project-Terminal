@@ -7,6 +7,7 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
+import com.estrin217.terminal.core.LocaleManager
 import com.estrin217.terminal.core.logger.DebugLogger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -46,44 +47,44 @@ class LoggerViewModel : ViewModel() {
     fun copyLogsToClipboard(context: Context) {
         val logsList = _filteredLogs.value
         if (logsList.isEmpty()) {
-            Toast.makeText(context, "No logs to copy", Toast.LENGTH_SHORT).show() // [cite: 29]
+            Toast.makeText(context, LocaleManager.getString("no_logs_copy"), Toast.LENGTH_SHORT).show()
             return
         }
 
-        val logsText = logsList.joinToString("\n") // [cite: 29]
+        val logsText = logsList.joinToString("\n")
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("Debug Logs", logsText) // [cite: 29]
-        clipboard.setPrimaryClip(clip) // [cite: 29]
+        val clip = ClipData.newPlainText(LocaleManager.getString("debug_logger_title"), logsText)
+        clipboard.setPrimaryClip(clip)
 
-        Toast.makeText(context, "Logs copied to clipboard", Toast.LENGTH_SHORT).show() // [cite: 30]
+        Toast.makeText(context, LocaleManager.getString("logs_copied"), Toast.LENGTH_SHORT).show()
     }
 
     fun exportAndShareLogs(context: Context) {
-        val filePath = DebugLogger.exportLogsToFile(context) // [cite: 31]
+        val filePath = DebugLogger.exportLogsToFile(context)
         if (filePath != null) {
-            Toast.makeText(context, "Logs exported to: $filePath", Toast.LENGTH_SHORT).show() // [cite: 31]
+            Toast.makeText(context, LocaleManager.getString("logs_exported", filePath), Toast.LENGTH_SHORT).show()
 
             try {
-                val file = File(filePath) // [cite: 31]
+                val file = File(filePath)
                 val uri = FileProvider.getUriForFile(
                     context,
                     "${context.packageName}.fileprovider",
                     file
-                ) // [cite: 31]
+                )
 
                 val intent = Intent().apply {
-                    action = Intent.ACTION_SEND // [cite: 32]
-                    putExtra(Intent.EXTRA_STREAM, uri) // [cite: 32]
-                    type = "text/plain" // [cite: 32]
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) // [cite: 32]
+                    action = Intent.ACTION_SEND
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    type = "text/plain"
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
 
-                context.startActivity(Intent.createChooser(intent, "Share logs")) // [cite: 33]
+                context.startActivity(Intent.createChooser(intent, LocaleManager.getString("share_logs")))
             } catch (e: Exception) {
-                DebugLogger.e("LoggerActivity", "Error sharing file", e) // [cite: 33]
+                DebugLogger.e("LoggerActivity", "Error sharing file", e)
             }
         } else {
-            Toast.makeText(context, "Error exporting logs", Toast.LENGTH_SHORT).show() // [cite: 34]
+            Toast.makeText(context, LocaleManager.getString("error_exporting_logs"), Toast.LENGTH_SHORT).show()
         }
     }
 

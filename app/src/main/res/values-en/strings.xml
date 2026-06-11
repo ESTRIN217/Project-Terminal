@@ -1,0 +1,25 @@
+<resources>
+    <string name="app_name">Terminal</string>
+    <string name="loading_text">Extracting Linux environment (Rootfs)...</string>
+    <string name="progress_desc">This will only happen the first time.</string>
+    <string name="extracted_count">Files extracted: %s</string>
+    <string name="extraction_error">Extraction error: %s</string>
+    <string name="install_error_toast">Error installing rootfs: %s</string>
+    <string name="no_internet_error">No internet</string>
+    <string name="connection_error">Connection error</string>
+    <string name="clear_logs_title">Clear Logs?</string>
+    <string name="clear_logs_desc">Are you sure you want to clear all logs?</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+    <string name="filter_level">Filter Level:</string>
+    <string name="refresh">Refresh</string>
+    <string name="copy">Copy</string>
+    <string name="export">Export</string>
+    <string name="clear">Clear</string>
+    <string name="no_logs_copy">No logs to copy</string>
+    <string name="logs_copied">Logs copied to clipboard</string>
+    <string name="logs_exported">Logs exported to: %s</string>
+    <string name="share_logs">Share logs</string>
+    <string name="debug_logger_title">Debug Logger</string>
+    <string name="error_exporting_logs">Error exporting logs</string>
+</resources>
