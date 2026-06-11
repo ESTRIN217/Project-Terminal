@@ -2,6 +2,7 @@ plugins {
     id("com.android.library")
     // Se elimina 'org.jetbrains.kotlin.android'. AGP 9.0+ gestiona Kotlin de forma nativa.
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.jetbrains.kotlin.compose)
 }
 
 android {
@@ -60,6 +61,8 @@ dependencies {
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.androidx.compose.runtime)
+    implementation(libs.androidx.compose.ui)
     
     testImplementation(libs.junit)
 }

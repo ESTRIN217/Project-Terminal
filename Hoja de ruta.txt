@@ -1,344 +1,110 @@
-Arquitectura de Integración de una Terminal Debian GNU/Linux en Android: Implementación de Jetpack Compose, PRoot, Base Termux y Depuración EstructuradaLa convergencia de entornos de desarrollo de escritorio dentro del ecosistema móvil de Android ha dejado de ser un mero experimento para convertirse en una necesidad técnica para desarrolladores e ingenieros de sistemas. Lograr la ejecución de una distribución de clase empresarial como Debian GNU/Linux de manera local, utilizando un entorno gráfico declarativo moderno basado en Jetpack Compose, exige coordinar múltiples capas tecnológicas de bajo nivel. Este reporte analiza en profundidad la arquitectura requerida para integrar la emulación de terminal heredada de Termux, la virtualización de llamadas al sistema mediante PRoot para eludir las restricciones de seguridad W^X de Android, y un sistema asíncrono de registro estructurado optimizado para depurar toda la pila de ejecución.1. Interoperabilidad Gráfica y Gestión de Estado en Jetpack ComposeLa integración de la base de código de Termux dentro del paradigma declarativo de Jetpack Compose requiere aislar y envolver de manera precisa los componentes gráficos tradicionales del sistema de vistas de Android. Específicamente, los componentes críticos son TerminalView (el componente visual que interactúa con la GPU) y TerminalSession (el motor que gestiona la máquina de estados VT100/Xterm y el búfer de texto). Para mantener el rendimiento óptimo del hilo de interfaz de usuario durante flujos masivos de salida de datos (como la descompresión de archivos o la compilación de código), se debe diseñar un contenedor interoperable que no induzca ciclos constantes de recomposición en Compose.El puente de unión se materializa mediante el módulo core-terminal, el cual debe mantener los nombres de paquete originales de Termux (com.termux.terminal y com.termux.view) para evitar la necesidad de refactorizar la lógica interna del emulador. Dentro de este módulo, se definen tres componentes fundamentales: TerminalSurface, TerminalSurfaceState y el constructor optimizado rememberTerminalSurfaceState().Kotlinpackage com.pocketshell.core.terminal.ui
+Hoja de Ruta - Project-Terminal
+================================
 
-import android.content.Context
-import android.view.ViewGroup
-import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.viewinterop.AndroidView
-import com.termux.terminal.TerminalSession
-import com.termux.view.TerminalView
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+Estado actual: Implementación base funcional con entorno Debian vía PRoot,
+integración Jetpack Compose, y pipeline de logging estructurado.
 
-@Stable
-class TerminalSurfaceState(
-    private val coroutineScope: CoroutineScope
-) {
-    var terminalSession by mutableStateOf<TerminalSession?>(null)
-        private set
+Objetivos y Prioridades
+-----------------------
 
-    private val _renderRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 64)
-    val renderRequests: SharedFlow<Unit> = _renderRequests.asSharedFlow()
+[P1] Migración a traducción nativa mediante strings.xml
+  - Estado: Pendiente
+  - Descripción: Reemplazar el sistema actual de traducciones basado en
+    archivos JSON en assets/locales/ por el sistema nativo de Android
+    mediante recursos strings.xml con calificadores de configuración
+    (values-es/, values-fr/, etc.). Esto permite:
+    * Aprovechar la selección automática de locale del sistema Android.
+    * Reducir el código personalizado de gestión de idiomas (LocaleManager).
+    * Facilitar la contribución de traducciones vía recursos estándar.
+    * Compatibilidad nativa con Acceso a Ajustes de Idioma de Android 13+.
+  - Tareas:
+    1. Mapear todas las claves usadas en el sistema JSON actual.
+    2. Crear values/strings.xml con valores por defecto (es_VE).
+    3. Crear values-es/strings.xml y values-en/strings.xml con traducciones.
+    4. Refactorizar LocaleManager para delegar en context.getString().
+    5. Eliminar el sistema JSON legacy.
 
-    fun attachSession(session: TerminalSession) {
-        this.terminalSession = session
-        // Se asocia el cliente de sesión de Termux para canalizar eventos
-    }
+[P1] Integración completa del bypass W^X (libtermux_exec)
+  - Estado: Implementación base (código C, build system, LD_PRELOAD configurado)
+  - Descripción: Asegurar que libtermux_exec.so se copie al rootfs de Debian
+    o se monte correctamente para que LD_PRELOAD funcione en el entorno
+    PRoot. Verificar que los ejecutables ELF dentro del contenedor Debian
+    sean correctamente redirigidos a través del linker de Android.
+  - Tareas:
+    1. Verificar montaje de /data_priv/lib/libtermux_exec.so en el rootfs.
+    2. Probar execve() wrapper con binarios de Debian (bash, python, node).
+    3. Agregar soporte para linker de 32 bits (linker) en termux_exec.cpp.
+    4. Validar compatibilidad con Android 14+ y targetSdk 35+.
 
-    fun writeInput(bytes: ByteArray) {
-        terminalSession?.write(bytes, 0, bytes.size)
-    }
+[P1] Soportes de PRoot y librerías nativas completas
+  - Estado: Parcial (solo libproot.so arm64-v8a presente)
+  - Descripción: Completar el conjunto de binarios nativos necesarios para
+    el funcionamiento robusto del entorno virtualizado.
+  - Tareas:
+    1. Compilar o integrar libproot-xed.so (emulador PRoot extendido).
+    2. Compilar o integrar libtalloc.so (asignador de memoria jerárquica).
+    3. Compilar o integrar libbsdtar.so (extracción nativa de rootfs).
+    4. Evaluar necesidad de libproot32.so para compatibilidad con binarios
+       de 32 bits dentro del contenedor.
+    5. Empaquetar binarios para todas las ABI objetivo.
 
-    fun requestTerminalRedraw() {
-        _renderRequests.tryEmit(Unit)
-    }
-}
+[P2] Inicialización del pipeline de diagnóstico (DiagnosticPipeline)
+  - Estado: Implementado (clases base, sinks, integración con DebugLogger)
+  - Descripción: Activar y registrar los sinks del pipeline de logging
+    asíncrono en los puntos de entrada de la aplicación. Integrar el
+    pipeline con la UI de logs existente para visualización en tiempo real.
+  - Tareas:
+    1. Registrar LogcatSink, DiskSink y DebugLoggerSink en Application.onCreate().
+    2. Integrar DiagnosticPipeline con la pantalla LoggerScreen.
+    3. Agregar metadata de contexto (componente, sesión, PID) a los logs.
+    4. Implementar rotación de archivos de log en DiskSink.
 
-@Composable
-fun rememberTerminalSurfaceState(
-    coroutineScope: CoroutineScope = rememberCoroutineScope()
-): TerminalSurfaceState {
-    return remember { TerminalSurfaceState(coroutineScope) }
-}
-La representación en pantalla se gestiona a través de TerminalSurface, la cual aloja la instancia de TerminalView. El control del flujo de renderizado evita la sobrecarga de Compose redirigiendo las peticiones de dibujo directamente al componente gráfico nativo. Al capturar señales ligeras a través de renderRequests, la vista invoca onScreenUpdated() sin pasar por los ciclos de cálculo de diseño (layout) de Compose.Las pulsaciones de teclas físicas y virtuales se gestionan enfocando directamente el componente TerminalView, permitiendo que el sistema de entrada nativo de Android procese eventos complejos como combinaciones con la tecla Control o Escape antes de que Compose intente interceptarlos.Para evitar la distorsión del contenido y asegurar una cuadrícula de caracteres uniforme, la terminal debe calcular de forma determinista la relación entre los píxeles métricos de la pantalla física y la matriz de celdas de texto monoespaciado. Este ajuste se define mediante la ecuación de dimensionamiento:$$G_{cols} = \left\lfloor \frac{W_{display} - 2 \cdot P_{horizontal}}{w_{cell}} \right\rfloor$$$$G_{rows} = \left\lfloor \frac{H_{display} - 2 \cdot P_{vertical}}{h_{cell}} \right\rfloor$$Donde $W_{display}$ y $H_{display}$ representan la resolución física en píxeles de la ventana de visualización, $P$ el margen interno configurado para prevenir que las esquinas curvas de la pantalla corten el texto, y $w_{cell}$ junto con $h_{cell}$ representan los anchos y altos del glifo tipográfico provisto por el renderizador. Para que el entorno se comporte correctamente bajo condiciones interactivas, la configuración de variables de entorno y parámetros de ejecución de la terminal virtualizada deben estructurarse de acuerdo con la siguiente tabla:Propiedad / VariableValor de ReferenciaPropósito y Relevancia en el EntornoPULSE_SERVER127.0.0.1Direcciona las peticiones de audio generadas en Debian hacia el servidor Pulseaudio de Termux.MOZ_FAKE_NO_SANDBOX1Deshabilita el sandbox nativo de motores basados en Chromium/Firefox que falla bajo PRoot.DEBIAN_FRONTENDnoninteractivePreviene que instaladores o paquetes de Debian abran interfaces interactivas de configuración.terminal-margin-horizontal3 dp (Rango: 0-100)Añade separación en los ejes laterales de la pantalla para pantallas curvadas.enforce-char-based-inputtrueCorrige problemas de doble entrada de caracteres y fallos en teclados virtuales de ciertos fabricantes.2. Plomería JNI, Forking de Procesos y el Enlazador de AndroidLa infraestructura interna de Termux se sustenta sobre un puente de llamadas nativas interactuando de forma estrecha con el núcleo de Android a través de la interfaz de funciones de Java (JNI). Al ejecutar una nueva sesión, el flujo lógico de la aplicación inicializa la clase TerminalSession, la cual invoca internamente la llamada JNI create_subprocess definida en el código nativo en C termux.c.C#include <jni.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#include <termios.h>
+[P2] TerminalSurfaceState como envoltura Compose oficial
+  - Estado: Implementado (TerminalSurfaceState, TerminalSurface, rememberTerminalSurfaceState)
+  - Descripción: Migrar el uso directo de AndroidView+TerminalBridge en
+    MainActivity para usar TerminalSurfaceState y TerminalSurface,
+    promoviendo la reutilización y separación de responsabilidades.
+  - Tareas:
+    1. Refactorizar MainActivity para usar TerminalSurfaceState.
+    2. Mover la lógica de teclas especiales a un componente Separado.
+    3. Agregar pruebas unitarias para TerminalSurfaceState.
 
-JNIEXPORT jint JNICALL
-Java_com_termux_terminal_JNI_createSubprocess(
-    JNIEnv *env, jclass clazz, jstring cmd, jstring cwd,
-    jobjectArray args, jobjectArray envVars, jintArray processIdArray,
-    jint rows, jint columns
-) {
-    int ptm = open("/dev/ptmx", O_RDWR | O_CLOEXEC);
-    if (ptm < 0) return -1;
+[P2] Soporte multi-ABI para librerías nativas
+  - Estado: Pendiente
+  - Descripción: Ampliar la compilación para incluir armeabi-v7a y x86_64
+    además de arm64-v8a, permitiendo la ejecución en una gama más amplia
+    de dispositivos Android (emuladores, tablets, dispositivos más antiguos).
+  - Tareas:
+    1. Habilitar abiFilters adicionales en terminal_core/build.gradle.kts.
+    2. Compilar libtermux_exec y terminal_core para cada ABI.
+    3. Validar funcionamiento en emulador x86_64 y dispositivos ARM32.
 
-    // Desbloqueo y concesión de accesos al esclavo pseudoterminal
-    grantpt(ptm);
-    unlockpt(ptm);
+[P3] WakeLock y WifiLock selectivos
+  - Estado: Implementado (adquisición y liberación en TerminalService)
+  - Descripción: Mejorar la gestión de bloqueos de suspensión para no
+    mantener WakeLock indefinidamente, sino adquirirlo solo cuando la
+    terminal esté ejecutando procesos en primer plano o tareas críticas.
+  - Tareas:
+    1. Agregar lógica de adquisición bajo demanda basada en actividad.
+    2. Liberar WakeLock cuando la app pase a segundo plano sin procesos hijos.
+    3. Configurar tiempo de espera máximo configurable.
 
-    struct winsize sz = { .ws_row = rows, .ws_col = columns };
-    ioctl(ptm, TIOCSWINSZ, &sz);
+[P3] Extracción nativa de rootfs con bsdtar
+  - Estado: Implementado (RootfsDecompressor, integrado en RootfsManager)
+  - Descripción: Priorizar la extracción mediante libbsdtar.so cuando esté
+    disponible, con fallback automático al método Java (Apache Commons Compress).
+  - Tareas:
+    1. Integrar RootfsDecompressor en el flujo de instalación de RootfsManager.
+    2. Medir la diferencia de rendimiento entre bsdtar nativo y Java.
+    3. Empaquetar libbsdtar.so en jniLibs.
 
-    pid_t pid = fork();
-    if (pid < 0) {
-        close(ptm);
-        return -1;
-    }
-
-    if (pid == 0) {
-        // Ejecución en el Espacio del Proceso Hijo
-        setsid();
-        const char *pts_name = ptsname(ptm);
-        int pts = open(pts_name, O_RDWR);
-        
-        dup2(pts, STDIN_FILENO);
-        dup2(pts, STDOUT_FILENO);
-        dup2(pts, STDERR_FILENO);
-
-        if (pts > 2) close(pts);
-        close(ptm);
-
-        // Invocación nativa del comando finalizado
-        // En un entorno targetSdk >= 29, aquí se direccionará el bypass del enlazador
-        _exit(1);
-    } else {
-        // Espacio del Padre: Se almacena el PID y se retorna el descriptor de archivo maestro
-        jint *pids = (*env)->GetIntArrayElements(env, processIdArray, NULL);
-        pids[0] = pid;
-        (*env)->ReleaseIntArrayElements(env, processIdArray, pids, 0);
-        return ptm;
-    }
-}
-Este proceso nativo hereda las complejidades asociadas a los cambios de políticas de gestión de procesos de Android 12 y superiores. En estas versiones del sistema operativo, el kernel incorpora un rastreador estricto de procesos hijo denominado PhantomProcessList. Cualquier subproceso bifurcado nativamente desde el proceso de la aplicación móvil (como bash o proot) se clasifica como proceso fantasma (phantom process). El sistema operativo monitorea continuamente el consumo agregado de recursos de estos procesos, limitando de forma drástica la cantidad permitida de subprocesos activos y finalizando aquellos que excedan los umbrales de uso de CPU o permanezcan activos en segundo plano.Para asegurar que los procesos de larga duración ejecutados en Debian no sean eliminados por el sistema operativo al alternar la visualización entre aplicaciones, es indispensable implementar estrategias de mitigación avanzadas:Servicio en Primer Plano (Foreground Service): La terminal debe ser administrada por un servicio en primer plano persistente dotado de un canal de notificación activo, lo que eleva la prioridad del proceso padre de la aplicación en los algoritmos de baja memoria del kernel de Android.Mecanismo de Bloqueo de Suspensión (WakeLock): Al alternar de tarea, el servicio debe adquirir de forma selectiva un bloqueo de suspensión del procesador (WakeLock) y, si la comunicación depende de adaptadores inalámbricos, un bloqueo de red de alto rendimiento (WifiLock). Esto evita que el hardware de radio o la CPU ingresen en un estado de bajo consumo y suspendan el tráfico de la terminal.Exenciones por Configuración: Para un despliegue controlado en entornos de desarrollo o corporativos, se puede deshabilitar de forma persistente la monitorización de procesos fantasma mediante comandos administrativos sobre la configuración del sistema global (device_config), garantizando la continuidad de servicios pesados como bases de datos o compiladores dentro de la terminal.3. Superación de Restricciones W^X en Android 10+ (API >= 29)La introducción de Android 10 trajo consigo restricciones de seguridad estrictas basadas en la mitigación de seguridad conocida como W^X (No-Escritura-o-Ejecución). Bajo esta política gestionada por el módulo SELinux de Android, se deniega de forma estricta la llamada al sistema execve() sobre cualquier archivo ubicado dentro del espacio de almacenamiento de datos privados de la aplicación (comúnmente conocido como directorio raíz de datos del usuario, /data/data/<package_name>/) debido a que la aplicación tiene privilegios de escritura sobre estas rutas. Esta restricción previene la ejecución directa de programas descargados o compilados localmente.Sin embargo, Android exime de esta restricción a la ruta /data/app/.../lib/, dado que únicamente la infraestructura de empaquetado y firma digital del instalador del sistema operativo cuenta con permisos de escritura sobre dicha sección de almacenamiento de solo lectura. Para sortear de forma óptima esta limitación sin necesidad de alterar el nivel de targetSdkVersion de la aplicación (manteniendo así el cumplimiento de las normativas de la Play Store de Google), se utiliza la técnica de distribución en el directorio nativo.Este método consiste en renombrar los ejecutables nativos (como el propio binario de PRoot) estructurándolos bajo el esquema clásico de bibliotecas dinámicas compartidas (utilizando el prefijo lib y el sufijo .so, como libproot-xed.so) y empaquetándolos bajo la ruta jniLibs/<arch>/ de la aplicación. Al definir de forma explícita el parámetro de instalación en el manifiesto principal, el sistema operativo se encarga de extraerlos y ubicarlos en la zona con permisos de ejecución:XML<application
-    android:extractNativeLibs="true"
-    android:hasCode="true">
-    <!-- Resto de configuraciones de actividades y servicios de la terminal -->
-</application>
-Esta directiva obliga al gestor de instalación a descomprimir las "bibliotecas falsas" directamente en la carpeta interna accesible en tiempo de ejecución:Kotlinval nativeLibraryDirectory = context.applicationInfo.nativeLibraryDir
-val prootBinaryPath = File(nativeLibraryDirectory, "libproot-xed.so").absolutePath
-Aun así, este mecanismo de redirección de ruta resuelve únicamente la ejecución del cargador base de PRoot. Si una aplicación interna de Debian intenta invocar una llamada al sistema para ejecutar un ejecutable dinámico compilado dentro del contenedor, el kernel de Android detectará la operación y detendrá la ejecución por violación de permisos de SELinux. Para resolver este problema, el paquete termux-exec incorporado en la base de código de Termux realiza una interceptación técnica utilizando la variable de entorno LD_PRELOAD.+-------------------------------------------------------------------+
-|                   Proceso en Debian (Espacio de Usuario)          |
-|                                                                   |
-|   1. Invocación de execve("/usr/bin/python3", args...)            |
-+---------------------------------+---------------------------------+
-                                  |
-                                  v Interceptado por LD_PRELOAD
-+---------------------------------+---------------------------------+
-|                   Wrapper en libtermux-exec.so                   |
-|                                                                   |
-|   2. Reescribe la llamada nativa execve()                         |
-|   3. Determina arquitectura (32/64 bits)                          |
-|   4. Construye llamada al linker del sistema operativo:           |
-|      "/system/bin/linker64" "/usr/bin/python3" [args...]           |
-+---------------------------------+---------------------------------+
-                                  |
-                                  v Envío de syscall reconstruido al Kernel
-+---------------------------------+---------------------------------+
-|                         Kernel de Android                         |
-|                                                                   |
-|   5. Valida la firma y ruta de "/system/bin/linker64" (Permitido) |
-|   6. Ejecuta de forma segura el proceso dinámico virtualizado     |
-+-------------------------------------------------------------------+
-Este proceso de envoltura estructural se aplica mediante un interceptor escrito en C que redefine la llamada estándar de la biblioteca del sistema bionic (libc):C#include <unistd.h>
-#include <string.h>
-#include <stdlib.h>
-
-int execve(const char *filename, char *const argv[], char *const envp[]) {
-    // Definición del enlazador dinámico de Android (Bypass de seguridad SELinux)
-    const char *linker = "/system/bin/linker64";
-    
-    // Se valida la arquitectura de destino del binario para acoplar la llamada
-    #if defined(__i386__) || defined(__arm__)
-    linker = "/system/bin/linker";
-    #endif
-
-    // Construcción dinámica de argumentos para envolver la ejecución
-    int arg_count = 0;
-    while (argv[arg_count] != NULL) arg_count++;
-
-    char **new_argv = malloc((arg_count + 3) * sizeof(char *));
-    new_argv[0] = (char *)linker;
-    new_argv[1] = (char *)filename; // Ruta absoluta del ejecutable virtualizado
-    for (int i = 1; i <= arg_count; i++) {
-        new_argv[i + 1] = argv[i];
-    }
-    new_argv[arg_count + 2] = NULL;
-
-    // Se despacha la ejecución delegando la validación del kernel al linker oficial
-    return syscall(__NR_execve, linker, new_argv, envp);
-}
-Mediante este bypass, el subsistema de seguridad del sistema operativo Android únicamente registra la inicialización autorizada del cargador dinámico oficial de la plataforma (/system/bin/linker64), permitiendo la inicialización asíncrona de ejecutables x86/64 compilados o enlazados internamente en Debian sin generar excepciones de violación de escritura de página o ejecuciones inseguras.La distribución y las dependencias asociadas de estos archivos binarios de soporte técnico que deben ser ubicados en jniLibs se detallan a continuación:Nombre del Binario en jniLibs/Fuente del Proyecto de OrigenRol Crítico y Relevancia en el Bypass W^Xlibproot-xed.soTermux-Patched PRootCódigo del emulador PRoot encargado de gestionar el rastreo ptrace de llamadas del sistema de Debian.libproot.soTermux PRoot LoaderEnlazador e inyector nativo dinámico de 64 bits de PRoot.libproot32.soTermux PRoot Loader (32-bit)Enlazador e inyector nativo para garantizar compatibilidad sobre plataformas e hilos de procesamiento legados.libtalloc.soGNU Talloc Memory AllocatorAsignador estructurado de memoria jerárquica indispensable para el funcionamiento de PRoot.libbsdtar.soLibarchive Native ProjectMotor de descompresión utilizado en Android para desempaquetar la imagen Debian reteniendo de forma precisa enlaces simbólicos.4. Despliegue del Rootfs de Debian y Compatibilidad con Glibc/SyscallsEl proceso de despliegue del sistema Debian se realiza inicialmente descargando un archivo tarball (rootfs) empaquetado bajo el estándar de contenedor de nube OCI o Docker. Dado que la descarga directa de un tarball convencional e intacto puede fallar en Android al intentar desempaquetar enlaces físicos (hardlinks) sobre particiones internas del almacenamiento móvil, se recurre a la descompresión asíncrona mediante la utilidad de extracción bsdtar compilada como biblioteca nativa (libbsdtar.so).Kotlinpackage com.mcpshell.shell
-
-import android.content.Context
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.io.File
-
-class RootfsDecompressor(private val context: Context) {
-
-    suspend fun extractDebianRootfs(tarballSource: File, destinationDir: File): Boolean = withContext(Dispatchers.IO) {
-        if (!destinationDir.exists()) destinationDir.mkdirs()
-
-        val nativeLibraryDir = context.applicationInfo.nativeLibraryDir
-        val bsdtarBinary = File(nativeLibraryDir, "libbsdtar.so").absolutePath
-
-        // Comando parametrizado de extracción bsdtar
-        // Se ignoran limitaciones de propiedad UID/GID típicos del desempaquetado de Unix
-        val command = arrayOf(
-            bsdtarBinary,
-            "-x", // Extraer
-            "-f", tarballSource.absolutePath, // Ruta del archivo de origen
-            "-C", destinationDir.absolutePath, // Ruta de destino
-            "--no-same-owner" // Fuerza la asignación al UID del proceso de la app Android
-        )
-
-        try {
-            val process = Runtime.getRuntime().exec(command)
-            val exitCode = process.waitFor()
-            exitCode == 0
-        } catch (e: Exception) {
-            false
-        }
-    }
-}
-Una vez completada la descompresión asíncrona, se debe preparar la sesión virtualizada aplicando las correcciones necesarias antes del arranque del contenedor. Al inicializar el contenedor con PRoot, los ejecutables dentro de Debian interactúan con la biblioteca estándar de C de GNU (glibc), la cual asume que el sistema operativo subyacente es un kernel Linux genérico.No obstante, el kernel Linux modificado de Android incorpora filtros estrictos de llamadas al sistema basados en seccomp. Al ejecutarse bajo el espacio de usuario de un teléfono móvil, muchas llamadas al sistema estándar generadas por la infraestructura moderna de Debian (por ejemplo, aquellas invocadas por procesos de compilación o servidores Web como node o motores basados en Chromium para gestionar memoria compartida) son interceptadas y rechazadas de forma tajante por la política de seguridad móvil de Android, provocando la terminación inmediata del proceso (crash).Para resolver de manera elegante estas incompatibilidades, se aplica una técnica de captura y reescritura de señales nativas. El cargador dinámico de PRoot implementa un manejador interno que atrapa la señal SIGSYS provocada por las violaciones de llamadas al sistema interceptadas por los filtros seccomp de Android (SECCOMP_RET_TRAP).                     +---------------------------------------+
-                     |    Proceso Virtualizado de Debian     |
-                     |                                       |
-                     |   Invoca llamada al sistema no        |
-                     |   soportada por el Kernel de Android   |
-                     +-------------------+-------------------+
-                                         |
-                                         v
-                     +-------------------+-------------------+
-                     |           Kernel de Android           |
-                     |                                       |
-                     |   Filtro Seccomp detecta infracción   |
-                     |   Dispara señal SECCOMP_RET_TRAP      |
-                     +-------------------+-------------------+
-                                         |
-                                         v Señal SIGSYS
-                     +-------------------+-------------------+
-                     |        Manejador SIGSYS en PRoot      |
-                     |                                       |
-                     |   Atrapa la señal de excepción y      |
-                     |   modifica el registro de retorno.    |
-                     |   Simula un retorno de error ENOSYS   |
-                     +-------------------+-------------------+
-                                         |
-                                         v Retorno controlado
-                     +-------------------+-------------------+
-                     |        Runtime glibc de Debian        |
-                     |                                       |
-                     |   Recibe ENOSYS (No Soportado) y      |
-                     |   ejecuta ruta alternativa de respaldo|
-                     +---------------------------------------+
-Este enrutamiento preventivo intercepta la finalización anormal del proceso nativo y, en su lugar, altera los registros de la CPU del hilo en ejecución para simular una respuesta controlada de llamada al sistema no implementada (ENOSYS). Al recibir esta respuesta de error estándar, las rutinas internas de la biblioteca glibc asumen que el núcleo actual es antiguo y activan de manera automática sus rutas alternativas de respaldo (fallback), garantizando la continuidad de aplicaciones exigentes sin inducir fallos de segmentación.5. Arquitectura del Motor de Registro (Logging) Estructurado y DepuraciónEl desarrollo de una aplicación híbrida que ejecuta procesos a través de un motor nativo virtualizado de llamadas bajo hilos concurrentes requiere de una arquitectura de depuración estructurada de alta eficiencia. El motor de registro dinámico no debe generar interrupciones en el hilo de renderizado gráfico de Compose, al mismo tiempo que debe capturar y formatear de manera consistente excepciones ocurridas en el espacio nativo de C++ de PRoot o eventos asíncronos de Kotlin.La solución se estructura mediante un despachador asíncrono no bloqueante basado en canales concurrentes de corrutinas (Channel) combinados con la biblioteca de abstracción kotlin-logging. Para rastrear de manera unificada los flujos de ejecución a lo largo de llamadas asíncronas cruzadas entre hilos de proceso, la infraestructura propaga identificadores únicos utilizando variables de contexto diagnóstico (MDC - Mapped Diagnostic Context) empaquetadas a través de la extensión MDCContext de corrutinas.Kotlinpackage com.pocketshell.core.logging
-
-import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.consumeAsFlow
-import java.io.File
-import java.io.FileWriter
-import java.io.PrintWriter
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-
-enum class SystemComponent { INTERFACE, JNI_BRIDGE, PROOT_CORE, CONTAINER_DEBIAN }
-
-data class DiagnosticLog(
-    val timestamp: Long,
-    val component: SystemComponent,
-    val severity: LogLevel,
-    val threadName: String,
-    val message: String,
-    val exception: Throwable? = null,
-    val metadata: Map<String, String> = emptyMap()
-)
-
-object DiagnosticPipeline {
-    private val logChannel = Channel<DiagnosticLog>(capacity = 5000)
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val activeSinks = mutableListOf<DiagnosticSink>()
-
-    init {
-        // Inicialización del hilo de consumo asíncrono (Despachador Seguro de Logs)
-        scope.launch {
-            logChannel.consumeAsFlow().collect { logEntry ->
-                activeSinks.forEach { sink ->
-                    try {
-                        sink.dispatch(logEntry)
-                    } catch (e: Exception) {
-                        // Fallback al logger estándar del sistema en caso de fallo del sumidero
-                        android.util.Log.e("DiagnosticPipeline", "Error en sumidero: ${sink.javaClass.name}", e)
-                    }
-                }
-            }
-        }
-    }
-
-    fun registerSink(sink: DiagnosticSink) {
-        activeSinks.add(sink)
-    }
-
-    fun postLog(
-        component: SystemComponent,
-        severity: LogLevel,
-        message: () -> String,
-        throwable: Throwable? = null,
-        metadata: Map<String, String> = emptyMap()
-    ) {
-        val entry = DiagnosticLog(
-            timestamp = System.currentTimeMillis(),
-            component = component,
-            severity = severity,
-            threadName = Thread.currentThread().name,
-            message = message(),
-            exception = throwable,
-            metadata = metadata
-        )
-        logChannel.trySend(entry)
-    }
-}
-
-interface DiagnosticSink {
-    fun dispatch(log: DiagnosticLog)
-}
-
-class DiskSink(private val file: File) : DiagnosticSink {
-    private val format = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
-
-    override fun dispatch(log: DiagnosticLog) {
-        try {
-            FileWriter(file, true).use { fw ->
-                PrintWriter(fw).use { pw ->
-                    val timestampStr = format.format(Date(log.timestamp))
-                    pw.print("[$timestampStr] [${log.severity.name}] [${log.component.name}] [Thread: ${log.threadName}] ")
-                    pw.print(log.message)
-                    if (log.metadata.isNotEmpty()) {
-                        pw.print(" | Meta: ${log.metadata}")
-                    }
-                    pw.println()
-                    log.exception?.let {
-                        pw.println("--- Inicio Detalle Excepción ---")
-                        it.printStackTrace(pw)
-                        pw.println("--- Fin Detalle Excepción ---")
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("DiskSink", "Fallo al escribir registros en almacenamiento físico", e)
-        }
-    }
-}
-Este sistema permite capturar la traza de diagnóstico de manera perezosa. Al invocar postLog utilizando una expresión lambda, las costosas operaciones de formateo e interpolación de variables solo se ejecutan si el evento supera el umbral de filtrado activo de los sumideros registrados, evitando degradar el rendimiento del motor gráfico y de la terminal interactiva. El flujo de datos asíncrono y los niveles de gravedad recomendados se estructuran de acuerdo con la siguiente tabla de trazabilidad:Nivel de RegistroComponente DestinoTipo de Evento MonitoreadoImplicación en el Diagnóstico ForenseLogLevel.TRACESystemComponent.INTERFACEMovimientos del cursor, clics e interacciones de selección de texto.Permite depurar errores en las matrices de hit-testing de la terminal sobre Compose.LogLevel.DEBUGSystemComponent.JNI_BRIDGERetornos de llamada del descriptor maestro (PTY Master FD) y llamadas a winsize.Verifica la correcta inicialización del puente nativo de entrada/salida.LogLevel.INFOSystemComponent.PROOT_COREMapeo y montaje dinámico de directorios del almacenamiento virtualizado.Confirma que PRoot ha estructurado de forma consistente el aislamiento de directorios.LogLevel.WARNSystemComponent.CONTAINER_DEBIANExcesivo uso de subprocesos fantasma por el contenedor Debian.Alerta sobre la posibilidad latente de eliminación asíncrona del proceso por parte del kernel de Android.LogLevel.ERRORSystemComponent.JNI_BRIDGESeñales de error en llamadas bifurcadas con fork() o excepciones en descriptores de archivos.Alerta crítica de fallo en el puente interactivo que requiere el reinicio asíncrono de la terminal.La trazabilidad unificada de llamadas que cruzan la barrera de corrutinas a través de múltiples hilos se realiza configurando de manera explícita el despachador de registros con el soporte de contexto SLF4J:Kotlinfun launchMonitoredDebianProcess(
-    surfaceState: TerminalSurfaceState,
-    session: TerminalSession,
-    userContextMap: Map<String, String>
-) {
-    val logger = KotlinLogging.logger {}
-    val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-
-    // Enlace asíncrono de logs estructurados cruzando puntos de suspensión
-    coroutineScope.launch(MDCContext()) {
-        io.github.oshai.kotlinlogging.withLoggingContext(userContextMap) {
-            logger.info { "Iniciando secuencia de arranque de terminal Debian bajo PRoot" }
-            
-            DiagnosticPipeline.postLog(
-                SystemComponent.INTERFACE,
-                LogLevel.INFO,
-                { "Sesión de terminal adjuntada: ${session.mHandle}" },
-                metadata = userContextMap
-            )
-            
-            surfaceState.attachSession(session)
-        }
-    }
-}
-La integración de este esquema de registro asíncrono y estructurado garantiza que cualquier evento de error ocurrido en la frontera de las capas de software —sea una violación de permisos de SELinux, un rechazo de llamada del sistema por seccomp, o una interrupción del enlazador dinámico— sea capturada y formateada en segundo plano de forma no bloqueante, protegiendo en todo momento la fluidez visual de la interfaz de usuario desarrollada en Jetpack Compose.
+[P3] Manejo de señales SIGSYS (seccomp)
+  - Estado: Pendiente (actualmente desactivado vía PROOT_NO_SECCOMP=1)
+  - Descripción: Investigar la implementación de un manejador SIGSYS que
+    permita mantener seccomp activo para mayor seguridad, atrapando las
+    violaciones de llamadas al sistema y simulando ENOSYS como lo describe
+    la arquitectura de PRoot.
+  - Tareas:
+    1. Investigar si PRoot ya maneja SIGSYS internamente.
+    2. Evaluar alternativas: policy seccomp personalizada vs PROOT_NO_SECCOMP.
+    3. Documentar las llamadas al sistema bloqueadas por Android 14+.

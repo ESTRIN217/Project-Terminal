@@ -9,9 +9,12 @@ import android.content.Intent
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.net.wifi.WifiManager
+import android.net.wifi.WifiManager.WifiLock
 import androidx.core.app.NotificationCompat
+import com.estrin217.terminal.core.logger.DebugLogger
 import com.termux.terminal.TerminalSession
-import java.io.File
 
 class TerminalService : Service() {
 
@@ -19,30 +22,36 @@ class TerminalService : Service() {
     var currentSession: TerminalSession? = null
         private set
 
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiLock? = null
+
     companion object {
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "terminal_service_channel"
         private const val CHANNEL_NAME = "Terminal Background Service"
+        private const val WAKE_LOCK_TAG = "TerminalService:WakeLock"
+        private const val WIFI_LOCK_TAG = "TerminalService:WifiLock"
     }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
 
-        // Ensure native library is available and log lifecycle
-        com.estrin217.terminal.core.logger.DebugLogger.i("TerminalService", "onCreate invoked")
+        DebugLogger.i("TerminalService", "onCreate invoked")
         val loaded = TerminalCore.ensureLoaded(this)
         if (loaded) {
-            com.estrin217.terminal.core.logger.DebugLogger.i("TerminalService", "Native libraries loaded successfully")
+            DebugLogger.i("TerminalService", "Native libraries loaded successfully")
         } else {
-            com.estrin217.terminal.core.logger.DebugLogger.e("TerminalService", "Native libraries failed to load")
+            DebugLogger.e("TerminalService", "Native libraries failed to load")
         }
+
+        acquireWakeLock()
+        acquireWifiLock()
 
         startForeground(NOTIFICATION_ID, buildNotification())
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Keep service running until explicitly stopped
         return START_STICKY
     }
 
@@ -50,9 +59,6 @@ class TerminalService : Service() {
         return binder
     }
 
-    /**
-     * Spawns a new TerminalSession running under PRoot, or returns the current one.
-     */
     fun createOrGetSession(context: Context, bridge: TerminalBridge): TerminalSession {
         currentSession?.let { return it }
 
@@ -66,7 +72,7 @@ class TerminalService : Service() {
             cwd,
             args,
             env,
-            10000, // transcript rows
+            10000,
             bridge
         )
 
@@ -82,6 +88,8 @@ class TerminalService : Service() {
 
     override fun onDestroy() {
         stopSession()
+        releaseWakeLock()
+        releaseWifiLock()
         super.onDestroy()
     }
 
@@ -101,11 +109,69 @@ class TerminalService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Terminal Aislada")
             .setContentText("El entorno Linux está ejecutándose en segundo plano.")
-            .setSmallIcon(android.R.drawable.ic_dialog_info) // Default generic icon
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
+    }
+
+    private fun acquireWakeLock() {
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                WAKE_LOCK_TAG
+            )
+            wakeLock?.acquire(4 * 60 * 60 * 1000L)
+            DebugLogger.i("TerminalService", "WakeLock acquired")
+        } catch (e: Exception) {
+            DebugLogger.e("TerminalService", "Failed to acquire WakeLock", e)
+        }
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            wakeLock?.let {
+                if (it.isHeld) {
+                    it.release()
+                    DebugLogger.i("TerminalService", "WakeLock released")
+                }
+            }
+        } catch (e: Exception) {
+            DebugLogger.e("TerminalService", "Error releasing WakeLock", e)
+        }
+        wakeLock = null
+    }
+
+    private fun acquireWifiLock() {
+        try {
+            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            @Suppress("DEPRECATION")
+            val lockType = WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            wifiLock = wifiManager.createWifiLock(
+                lockType,
+                WIFI_LOCK_TAG
+            )
+            wifiLock?.acquire()
+            DebugLogger.i("TerminalService", "WifiLock acquired")
+        } catch (e: Exception) {
+            DebugLogger.e("TerminalService", "Failed to acquire WifiLock", e)
+        }
+    }
+
+    private fun releaseWifiLock() {
+        try {
+            wifiLock?.let {
+                if (it.isHeld) {
+                    it.release()
+                    DebugLogger.i("TerminalService", "WifiLock released")
+                }
+            }
+        } catch (e: Exception) {
+            DebugLogger.e("TerminalService", "Error releasing WifiLock", e)
+        }
+        wifiLock = null
     }
 
     inner class TerminalServiceBinder : Binder() {

@@ -17,8 +17,8 @@
 
 static int throw_runtime_exception(JNIEnv* env, char const* message)
 {
-    jclass exClass = (*env)->FindClass(env, "java/lang/RuntimeException");
-    (*env)->ThrowNew(env, exClass, message);
+    jclass exClass = env->FindClass("java/lang/RuntimeException");
+    env->ThrowNew(exClass, message);
     return -1;
 }
 
@@ -101,14 +101,14 @@ static int create_subprocess(JNIEnv* env,
         if (chdir(cwd) != 0) {
             char* error_message;
             // No need to free asprintf()-allocated memory since doing execvp() or exit() below.
-            if (asprintf(&error_message, "chdir(\"%s\")", cwd) == -1) error_message = "chdir()";
+            if (asprintf(&error_message, "chdir(\"%s\")", cwd) == -1) error_message = const_cast<char*>("chdir()");
             perror(error_message);
             fflush(stderr);
         }
         execvp(cmd, argv);
         // Show terminal output about failing exec() call:
         char* error_message;
-        if (asprintf(&error_message, "exec(\"%s\")", cmd) == -1) error_message = "exec()";
+        if (asprintf(&error_message, "exec(\"%s\")", cmd) == -1) error_message = const_cast<char*>("exec()");
         perror(error_message);
         _exit(1);
     }
@@ -127,42 +127,42 @@ JNIEXPORT jint JNICALL Java_com_termux_terminal_JNI_createSubprocess(
         jint cell_width,
         jint cell_height)
 {
-    jsize size = args ? (*env)->GetArrayLength(env, args) : 0;
+    jsize size = args ? env->GetArrayLength(args) : 0;
     char** argv = NULL;
     if (size > 0) {
         argv = (char**) malloc((size + 1) * sizeof(char*));
         if (!argv) return throw_runtime_exception(env, "Couldn't allocate argv array");
         for (int i = 0; i < size; ++i) {
-            jstring arg_java_string = (jstring) (*env)->GetObjectArrayElement(env, args, i);
-            char const* arg_utf8 = (*env)->GetStringUTFChars(env, arg_java_string, NULL);
+            jstring arg_java_string = (jstring) env->GetObjectArrayElement(args, i);
+            char const* arg_utf8 = env->GetStringUTFChars(arg_java_string, nullptr);
             if (!arg_utf8) return throw_runtime_exception(env, "GetStringUTFChars() failed for argv");
             argv[i] = strdup(arg_utf8);
-            (*env)->ReleaseStringUTFChars(env, arg_java_string, arg_utf8);
+            env->ReleaseStringUTFChars(arg_java_string, arg_utf8);
         }
         argv[size] = NULL;
     }
 
-    size = envVars ? (*env)->GetArrayLength(env, envVars) : 0;
+    size = envVars ? env->GetArrayLength(envVars) : 0;
     char** envp = NULL;
     if (size > 0) {
         envp = (char**) malloc((size + 1) * sizeof(char *));
         if (!envp) return throw_runtime_exception(env, "malloc() for envp array failed");
         for (int i = 0; i < size; ++i) {
-            jstring env_java_string = (jstring) (*env)->GetObjectArrayElement(env, envVars, i);
-            char const* env_utf8 = (*env)->GetStringUTFChars(env, env_java_string, 0);
+            jstring env_java_string = (jstring) env->GetObjectArrayElement(envVars, i);
+            char const* env_utf8 = env->GetStringUTFChars(env_java_string, nullptr);
             if (!env_utf8) return throw_runtime_exception(env, "GetStringUTFChars() failed for env");
             envp[i] = strdup(env_utf8);
-            (*env)->ReleaseStringUTFChars(env, env_java_string, env_utf8);
+            env->ReleaseStringUTFChars(env_java_string, env_utf8);
         }
         envp[size] = NULL;
     }
 
     int procId = 0;
-    char const* cmd_cwd = (*env)->GetStringUTFChars(env, cwd, NULL);
-    char const* cmd_utf8 = (*env)->GetStringUTFChars(env, cmd, NULL);
+    char const* cmd_cwd = env->GetStringUTFChars(cwd, nullptr);
+    char const* cmd_utf8 = env->GetStringUTFChars(cmd, nullptr);
     int ptm = create_subprocess(env, cmd_utf8, cmd_cwd, argv, envp, &procId, rows, columns, cell_width, cell_height);
-    (*env)->ReleaseStringUTFChars(env, cmd, cmd_utf8);
-    (*env)->ReleaseStringUTFChars(env, cwd, cmd_cwd);
+    env->ReleaseStringUTFChars(cmd, cmd_utf8);
+    env->ReleaseStringUTFChars(cwd, cmd_cwd);
 
     if (argv) {
         for (char** tmp = argv; *tmp; ++tmp) free(*tmp);
@@ -173,11 +173,11 @@ JNIEXPORT jint JNICALL Java_com_termux_terminal_JNI_createSubprocess(
         free(envp);
     }
 
-    int* pProcId = (int*) (*env)->GetPrimitiveArrayCritical(env, processIdArray, NULL);
+    int* pProcId = (int*) env->GetPrimitiveArrayCritical(processIdArray, nullptr);
     if (!pProcId) return throw_runtime_exception(env, "JNI call GetPrimitiveArrayCritical(processIdArray, &isCopy) failed");
 
     *pProcId = procId;
-    (*env)->ReleasePrimitiveArrayCritical(env, processIdArray, pProcId, 0);
+    env->ReleasePrimitiveArrayCritical(processIdArray, pProcId, 0);
 
     return ptm;
 }

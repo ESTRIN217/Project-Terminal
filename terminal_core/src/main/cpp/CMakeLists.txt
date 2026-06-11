@@ -7,6 +7,12 @@ add_library(
     terminal_jni.cpp
 )
 
+add_library(
+    termux_exec
+    SHARED
+    termux_exec.cpp
+)
+
 find_library(
     log-lib
     log
@@ -14,5 +20,10 @@ find_library(
 
 target_link_libraries(
     terminal_core
+    ${log-lib}
+)
+
+target_link_libraries(
+    termux_exec
     ${log-lib}
 )
