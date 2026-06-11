@@ -23,10 +23,10 @@ Aunque el entorno es una terminal, se emula la filosofía de **Material 3** medi
 
 ---
 
-## 3. Localización y Traducciones (i18n)
+## 3. Localización y Traducciones (strings)
 La aplicación está diseñada para ser global, por lo que **nunca** se deben hardcodear strings en el código fuente.
 
-* **Estructura de Recursos:** Los mensajes de la CLI, errores y textos de ayuda se gestionan mediante archivos de recursos independientes (JSON/YAML/etc.).
+* **Estructura de Recursos:** Los mensajes de la CLI, errores y textos de ayuda se gestionan mediante archivos de recursos independientes (XML/YAML/etc.).
 * **Idiomas Target Prioritarios:**
     * `es_VE`: Español de Venezuela (Idioma nativo/principal de la interfaz).
     * `pt_PT`: Portugués de Portugal.

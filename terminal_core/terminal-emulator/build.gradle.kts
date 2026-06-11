@@ -1,29 +1,29 @@
 plugins {
     id("com.android.library")
-    id("maven-publish")
 }
 
 android {
     namespace = "com.termux.emulator"
 
     // Se convierte el property de texto a Integer de forma segura para Kotlin DSL
-    compileSdk = (project.findProperty("compileSdkVersion") as? String)?.toInt() ?: 35
+    compileSdk = (project.findProperty("compileSdkVersion") as? String)?.toInt() ?: 36
     
     // Lectura del entorno del sistema con fallback al fallback del property
     ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: (project.findProperty("ndkVersion") as? String ?: "")
 
     defaultConfig {
         minSdk = (project.findProperty("minSdkVersion") as? String)?.toInt() ?: 26
-        //targetSdk = (project.findProperty("targetSdkVersion") as? String)?.toInt() ?: 35
-
+        
         externalNativeBuild {
-            ndkBuild {
-                cFlags("-std=c11", "-Wall", "-Wextra", "-Werror", "-Os", "-fno-stack-protector", "-Wl,--gc-sections")
+            // Se reemplaza ndkBuild por cmake
+            cmake {
+                // Puedes pasar banderas específicas aquí si lo requieres en el futuro
+                cppFlags("") 
             }
         }
 
         ndk {
-            abiFilters.addAll(listOf("x86", "x86_64", "armeabi-v7a", "arm64-v8a"))
+            abiFilters.addAll(listOf("x86_64", "arm64-v8a"))
         }
     }
 
@@ -35,8 +35,10 @@ android {
     }
 
     externalNativeBuild {
-        ndkBuild {
-            path = file("src/main/jni/Android.mk")
+        // Se apunta al nuevo archivo CMakeLists.txt en la raíz
+        cmake {
+            path = file("src/main/jni/CMakeLists.txt")
+            version = "3.22.1" // Versión estándar recomendada por el SDK de Android
         }
     }
 
@@ -48,14 +50,6 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
-    }
-
-    publishing {
-        multipleVariants {
-            withSourcesJar()
-            withJavadocJar()
-            allVariants()
-        }
     }
 }
 
@@ -69,24 +63,4 @@ tasks.withType<Test>().configureEach {
 dependencies {
     implementation("androidx.annotation:annotation:1.9.0")
     testImplementation("junit:junit:4.13.2")
-}
-
-// Declaración tipada de la tarea sourceJar
-val sourceJar by tasks.registering(Jar::class) {
-    from(android.sourceSets.getByName("main").java.srcDirs)
-    archiveClassifier.set("sources")
-}
-
-afterEvaluate {
-    publishing {
-        publications {
-            create<MavenPublication>("release") {
-                from(components.getByName("default"))
-                groupId = "com.termux"
-                artifactId = "terminal-emulator"
-                version = "0.118.0"
-                artifact(sourceJar.get())
-            }
-        }
-    }
 }

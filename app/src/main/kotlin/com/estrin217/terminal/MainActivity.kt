@@ -95,18 +95,11 @@ class MainActivity : ComponentActivity() {
                     
                     // RootfsManager logic for extracting standard tar input streams
                     java.io.FileInputStream(tempFile).use { fileStream ->
-                        val extractMethod = RootfsManager::class.java.getDeclaredMethod(
-                            "extractTarArchive",
-                            java.io.InputStream::class.java,
-                            File::class.java,
-                            Function1::class.java
-                        )
-                        extractMethod.isAccessible = true
-                        extractMethod.invoke(RootfsManager, fileStream, rootfsDir, { count: Int ->
+                        RootfsManager.extractTarArchive(fileStream, rootfsDir) { count ->
                             runOnUiThread {
                                 progressTextState.value = LocaleManager.getString("extracted_count", count)
                             }
-                        })
+                        }
                     }
 
                     File(rootfsDir, "home/programador").mkdirs()
@@ -209,6 +202,13 @@ class MainActivity : ComponentActivity() {
         DebugLogger.i(TAG, "Terminal session successfully attached")
     }
 
+    /** Called from AndroidView factory when bridge becomes available */
+    private fun onBridgeReady() {
+        if (isBound && terminalService != null) {
+            setupTerminalSession()
+        }
+    }
+
     @Composable
     fun MainScreen() {
         val isInstalling by isInstallingState
@@ -244,11 +244,9 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             view.setTerminalViewClient(terminalBridge)
-                            
-                            // If bound already, attach the session
-                            terminalSession?.let { session ->
-                                view.attachSession(session)
-                            }
+
+                            // If service already connected, attach the session now
+                            onBridgeReady()
                         }
                     },
                     modifier = Modifier.fillMaxSize()

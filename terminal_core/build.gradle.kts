@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.estrin217.terminal.core"
-    compileSdk = (project.findProperty("compileSdkVersion") as? String)?.toInt() ?: 37
+    compileSdk = (project.findProperty("compileSdkVersion") as? String)?.toInt() ?: 36
 
     defaultConfig {
         minSdk = 26 // Android 8.0 mínimo para soporte PTY decente

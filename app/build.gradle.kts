@@ -7,12 +7,12 @@ plugins {
 
 android {
     namespace = "com.estrin217.terminal"
-    compileSdk = (project.findProperty("compileSdkVersion") as? String)?.toInt() ?: 37
+    compileSdk = (project.findProperty("compileSdkVersion") as? String)?.toInt() ?: 36
 
     defaultConfig {
         applicationId = "com.estrin217.terminal"
         minSdk = 26
-        targetSdk = (project.findProperty("targetSdkVersion") as? String)?.toInt() ?: 37
+        targetSdk = (project.findProperty("targetSdkVersion") as? String)?.toInt() ?: 36
         versionCode = 1
         versionName = "1.0"
 
@@ -52,7 +52,6 @@ dependencies {
     implementation(project(":terminal_core"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
-    implementation(libs.material)
     
     // Compose (Se gestionan de manera óptima mediante el plugin 'kotlin-compose' aplicado arriba)
     implementation(libs.androidx.activity.compose)

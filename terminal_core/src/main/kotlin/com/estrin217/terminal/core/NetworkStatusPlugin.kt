@@ -20,8 +20,9 @@ class NetworkStatusPlugin private constructor(private val config: Config) {
             return NetworkStatusPlugin(Config().apply(block))
         }
 
-        override fun install(plugin: NetworkStatusPlugin, client: HttpClient) {
-            client.sendPipeline.intercept(HttpSendPipeline.Before) { subject ->
+        // Se cambió 'client' por 'scope' para coincidir con la firma original de HttpClientPlugin
+        override fun install(plugin: NetworkStatusPlugin, scope: HttpClient) {
+            scope.sendPipeline.intercept(HttpSendPipeline.Before) { subject ->
                 val hasInternet = ConnectivityUtils.hasInternet(plugin.config.applicationContext)
                 DebugLogger.i("NetworkStatusPlugin", "Connectivity check before request: $hasInternet")
                 if (!hasInternet) {

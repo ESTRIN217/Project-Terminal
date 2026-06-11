@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack // Importación explícita del icono AutoMirrored Outlined
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -60,7 +61,8 @@ fun LoggerScreen(
                 title = { Text("Debug Logger", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onBackPressed) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        // Cambiado a la variante Outrored de AutoMirrored
+                        Icon(imageVector = Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -104,7 +106,7 @@ fun LoggerScreen(
                     .padding(bottom = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                val levels = listOf("All", "DEBUG", "INFO", "WARNING", "ERROR") // 
+                val levels = listOf("All", "DEBUG", "INFO", "WARNING", "ERROR") 
                 levels.forEach { level ->
                     FilterChip(
                         selected = selectedLevel == level,
@@ -114,7 +116,7 @@ fun LoggerScreen(
                 }
             }
 
-            // Lista de Logs optimizada con LazyColumn (No recicla destructivamente los estados) 
+            // Lista de Logs optimizada con LazyColumn
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -172,7 +174,6 @@ fun LoggerScreen(
 
 @Composable
 fun LogItemRow(log: DebugLogger.LogEntry) {
-    // Definimos esquemas de color adaptados según las prioridades de logs
     val badgeColor = when (log.level) {
         DebugLogger.LogLevel.DEBUG -> Color(0xFF4CAF50)
         DebugLogger.LogLevel.INFO -> Color(0xFF2196F3)

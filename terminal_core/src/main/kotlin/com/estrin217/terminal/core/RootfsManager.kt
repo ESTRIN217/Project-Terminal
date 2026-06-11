@@ -81,7 +81,7 @@ object RootfsManager {
      * Procesa, descomprime y extrae de forma unificada flujos de datos TAR, XZ o GZIP (DRY).
      */
     @Throws(IOException::class)
-    private fun extractTarArchive(inputStream: InputStream, rootfsDir: File, progressCallback: (Int) -> Unit) {
+    internal fun extractTarArchive(inputStream: InputStream, rootfsDir: File, progressCallback: (Int) -> Unit) {
         val bufferedInput = BufferedInputStream(inputStream)
         
         val header = ByteArray(6)
@@ -101,7 +101,7 @@ object RootfsManager {
             }
             else -> {
                 // Validación de resguardo frente a respuestas erróneas en formato Texto/JSON (como errores 404)
-                val sample = String(header, 0, read.coerceAtMost(read), Charsets.UTF_8).trim()
+                val sample = String(header, 0, read.coerceAtMost(header.size), Charsets.UTF_8).trim()
                 if (sample.startsWith("{") || sample.startsWith("anti") || sample.startsWith("appl") || sample.startsWith("404")) { 
                     throw IOException("Error: Se esperaba un archivo TAR comprimido, pero se recibió texto/JSON: '$sample'") 
                 }
