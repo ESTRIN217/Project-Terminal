@@ -31,7 +31,6 @@ class TerminalApplication : Application() {
         lateinit var instance: TerminalApplication
             private set
         var pendingCrashReportPath: String? = null
-            private set
         private const val CRASH_NOTIFICATION_ID = 1001
         private const val CRASH_CHANNEL_ID = "crash_reports"
     }

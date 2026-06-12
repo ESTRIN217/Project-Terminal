@@ -367,8 +367,6 @@ object DebugLogger {
         }
     }
 
-    companion object {
-        private const val CRASH_FLAG_FILE = ".crash_flag"
-        private const val CRASH_LOG_DIR = "crash_reports"
-    }
+    private const val CRASH_FLAG_FILE = ".crash_flag"
+    private const val CRASH_LOG_DIR = "crash_reports"
 }
