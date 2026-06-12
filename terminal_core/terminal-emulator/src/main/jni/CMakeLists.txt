@@ -5,13 +5,13 @@ project("libtermux_project")
 
 # Define la librería dinámica y añade el archivo fuente .cpp
 add_library(
-    libtermux
+    termux
     SHARED
     termux.cpp
 )
 
 # Inyecta las banderas de compilación que tenías originalmente
-target_compile_options(libtermux PRIVATE
+target_compile_options(termux PRIVATE
     -std=c++17
     -Wall
     -Wextra
@@ -21,10 +21,10 @@ target_compile_options(libtermux PRIVATE
 )
 
 # Inyecta las banderas del enlazador (linker)
-target_link_options(libtermux PRIVATE
+target_link_options(termux PRIVATE
     -Wl,--gc-sections
 )
 
 # Vincula las librerías nativas estándar de Android (como logs si los usas)
 find_library(log-lib log)
-target_link_libraries(libtermux ${log-lib})
+target_link_libraries(termux ${log-lib})
