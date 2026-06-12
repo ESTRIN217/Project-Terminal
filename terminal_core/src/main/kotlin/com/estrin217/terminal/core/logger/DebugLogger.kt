@@ -1,6 +1,11 @@
 package com.estrin217.terminal.core.logger
 
+import android.content.ContentValues
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.File
@@ -269,21 +274,101 @@ object DebugLogger {
     }
     }
     fun initCrashHandler(context: Context) {
-    val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        val ctx = context.applicationContext
 
-    Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-        val writer = StringWriter()
-        throwable.printStackTrace(PrintWriter(writer))
-        val stackTraceStr = writer.toString()
-
-        // Registramos el error de forma síncrona en nuestro logger
-        e("CRASH", "La aplicación se cerró inesperadamente en el hilo: ${thread.name}", throwable)
-        
-        // Forzamos la exportación inmediata a un archivo de emergencia
-        exportLogsToFile(context)
-
-        // Devolvemos el control al sistema operativo para que la app cierre correctamente
-        defaultHandler?.uncaughtException(thread, throwable)
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            e("CRASH", "App crashed on thread: ${thread.name}", throwable)
+            saveCrashReport(ctx, thread, throwable)
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
     }
+
+    fun hasPendingCrashReport(context: Context): Boolean {
+        val flagFile = File(context.filesDir, CRASH_FLAG_FILE)
+        return flagFile.exists()
+    }
+
+    fun getPendingCrashReportPath(context: Context): String? {
+        val flagFile = File(context.filesDir, CRASH_FLAG_FILE)
+        return if (flagFile.exists()) flagFile.readText().takeIf { it.isNotBlank() } else null
+    }
+
+    fun clearCrashFlag(context: Context) {
+        File(context.filesDir, CRASH_FLAG_FILE).delete()
+    }
+
+    private fun saveCrashReport(context: Context, thread: Thread, throwable: Throwable) {
+        try {
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val crashContent = buildCrashReport(context, thread, throwable)
+
+            val fileName = "crash_$timestamp.log"
+            saveToDownloads(context, fileName, crashContent)
+
+            val crashDir = File(context.filesDir, CRASH_LOG_DIR)
+            crashDir.mkdirs()
+            val crashFile = File(crashDir, fileName)
+            crashFile.writeText(crashContent)
+
+            File(context.filesDir, CRASH_FLAG_FILE).writeText(crashFile.absolutePath)
+        } catch (_: Exception) {
+            // Last resort — can't log
+        }
+    }
+
+    private fun buildCrashReport(context: Context, thread: Thread, throwable: Throwable): String {
+        val versionName = try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        } catch (_: PackageManager.NameNotFoundException) { "?" }
+
+        val sw = StringWriter()
+        throwable.printStackTrace(PrintWriter(sw))
+
+        return buildString {
+            appendLine("=" .repeat(50))
+            appendLine("         CRASH REPORT - Project Terminal")
+            appendLine("=" .repeat(50))
+            appendLine("Device     : ${Build.MANUFACTURER} ${Build.MODEL}")
+            appendLine("Android    : ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+            appendLine("App        : ${context.packageName} v$versionName")
+            appendLine("Thread     : ${thread.name}")
+            appendLine("Timestamp  : ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())}")
+            appendLine("=" .repeat(50))
+            appendLine()
+            appendLine("--- Recent logs (last 200) ---")
+            synchronized(logLock) {
+                logs.takeLast(200).forEach { appendLine(it.toString()) }
+            }
+            appendLine()
+            appendLine("--- Stack trace ---")
+            appendLine(sw.toString())
+        }
+    }
+
+    private fun saveToDownloads(context: Context, fileName: String, content: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+                put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/TerminalCrashReports")
+            }
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+            uri?.let {
+                context.contentResolver.openOutputStream(it)?.use { out ->
+                    out.write(content.toByteArray())
+                }
+            }
+        } else {
+            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val crashDir = File(dir, "TerminalCrashReports")
+            crashDir.mkdirs()
+            File(crashDir, fileName).writeText(content)
+        }
+    }
+
+    companion object {
+        private const val CRASH_FLAG_FILE = ".crash_flag"
+        private const val CRASH_LOG_DIR = "crash_reports"
     }
 }

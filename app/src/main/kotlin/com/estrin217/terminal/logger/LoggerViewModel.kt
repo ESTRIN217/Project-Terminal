@@ -94,7 +94,7 @@ class LoggerViewModel : ViewModel() {
         refreshLogs()
     }
 
-    fun exportDiagnosticLog() {
-        TerminalApplication.instance.exportDiagnosticLogToShared()
+    fun exportCombinedLog() {
+        TerminalApplication.instance.exportCombinedLogToShared()
     }
 }

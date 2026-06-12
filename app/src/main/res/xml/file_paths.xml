@@ -6,4 +6,7 @@
     <cache-path
         name="cache"
         path="." />
+    <files-path
+        name="crash_reports"
+        path="crash_reports/" />
 </paths>

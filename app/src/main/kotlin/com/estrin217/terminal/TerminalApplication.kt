@@ -1,18 +1,23 @@
 package com.estrin217.terminal
 
 import android.app.Application
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.ContentValues
+import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import com.estrin217.terminal.core.logger.DebugLogger
 import com.estrin217.terminal.core.logger.DiagnosticPipeline
 import com.estrin217.terminal.core.logger.DiskSink
 import com.estrin217.terminal.core.logger.LogcatSink
 import com.estrin217.terminal.core.logger.DebugLoggerSink
 import java.io.File
-import java.io.FileOutputStream
-import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -25,6 +30,10 @@ class TerminalApplication : Application() {
             private set
         lateinit var instance: TerminalApplication
             private set
+        var pendingCrashReportPath: String? = null
+            private set
+        private const val CRASH_NOTIFICATION_ID = 1001
+        private const val CRASH_CHANNEL_ID = "crash_reports"
     }
 
     override fun onCreate() {
@@ -45,16 +54,91 @@ class TerminalApplication : Application() {
         DiagnosticPipeline.registerSink(DebugLoggerSink())
 
         DebugLogger.i("TerminalApplication", "DiagnosticPipeline initialized with LogcatSink, DiskSink, DebugLoggerSink")
+
+        checkForPreviousCrash()
     }
 
-    fun exportDiagnosticLogToShared() {
-        try {
-            val logDir = File(filesDir, "logs")
-            val logFiles = logDir.listFiles { f -> f.name.startsWith("diagnostic_") }?.sortedDescending()
-            val latestLog = logFiles?.firstOrNull() ?: return
+    private fun checkForPreviousCrash() {
+        if (!DebugLogger.hasPendingCrashReport(this)) return
 
+        val crashPath = DebugLogger.getPendingCrashReportPath(this)
+        pendingCrashReportPath = crashPath
+        DebugLogger.clearCrashFlag(this)
+
+        DebugLogger.w("TerminalApplication", "Previous crash detected. Report: $crashPath")
+
+        showCrashNotification(crashPath)
+    }
+
+    private fun showCrashNotification(crashPath: String?) {
+        createCrashNotificationChannel()
+
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            putExtra("show_crash_dialog", true)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(this, CRASH_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("Crash detectado")
+            .setContentText("La aplicación se cerró inesperadamente en la sesión anterior")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+
+        try {
+            NotificationManagerCompat.from(this).notify(CRASH_NOTIFICATION_ID, notification)
+        } catch (_: SecurityException) {
+            // No notification permission — will show dialog on next activity launch
+        }
+    }
+
+    private fun createCrashNotificationChannel() {
+        val channel = NotificationChannel(
+            CRASH_CHANNEL_ID,
+            "Reportes de crash",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Notificaciones de cierres inesperados de la aplicación"
+        }
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.createNotificationChannel(channel)
+    }
+
+    fun exportCombinedLogToShared() {
+        try {
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val fileName = "terminal_diagnostic_$timestamp.log"
+            val fileName = "terminal_combined_log_$timestamp.log"
+
+            val logDir = File(filesDir, "logs")
+            val diagnosticLogs = logDir.listFiles { f -> f.name.startsWith("diagnostic_") }
+                ?.sortedDescending()
+                ?.firstOrNull()
+
+            val combined = buildString {
+                appendLine("=" .repeat(50))
+                appendLine("  Combined Diagnostic Log - Project Terminal")
+                appendLine("=" .repeat(50))
+                appendLine()
+
+                appendLine("--- DebugLogger in-memory logs (${DebugLogger.getLogCount()} total) ---")
+                appendLine(DebugLogger.getLogsAsText())
+                appendLine()
+
+                if (diagnosticLogs != null) {
+                    appendLine("--- DiskSink diagnostic file ---")
+                    appendLine(diagnosticLogs.readText())
+                }
+
+                appendLine()
+                appendLine("--- Statistics ---")
+                appendLine(DebugLogger.getStatistics())
+            }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val contentValues = ContentValues().apply {
@@ -65,17 +149,17 @@ class TerminalApplication : Application() {
                 val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
                 uri?.let {
                     contentResolver.openOutputStream(it)?.use { out ->
-                        latestLog.inputStream().use { inp -> inp.copyTo(out) }
+                        out.write(combined.toByteArray())
                     }
                 }
             } else {
                 val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
                 val dest = File(downloadsDir, fileName)
-                latestLog.copyTo(dest, overwrite = true)
+                dest.writeText(combined)
             }
-            DebugLogger.i("TerminalApplication", "Diagnostic log exported to Downloads: $fileName")
+            DebugLogger.i("TerminalApplication", "Combined log exported to Downloads: $fileName")
         } catch (e: Exception) {
-            DebugLogger.e("TerminalApplication", "Failed to export diagnostic log", e)
+            DebugLogger.e("TerminalApplication", "Failed to export combined log", e)
         }
     }
 }

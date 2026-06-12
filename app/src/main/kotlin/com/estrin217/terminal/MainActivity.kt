@@ -23,7 +23,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import com.estrin217.terminal.core.LocaleManager
 import com.estrin217.terminal.core.RootfsManager
 import com.estrin217.terminal.core.TerminalBridge
@@ -116,9 +118,11 @@ class MainActivity : ComponentActivity() {
 
         DebugLogger.i(TAG, "MainActivity created with Jetpack Compose UI")
 
-        // Log current network state at startup
         val hasNet = ConnectivityUtils.hasInternet(this)
         DebugLogger.i(TAG, "Network available at startup: $hasNet")
+
+        val showCrashDialog = intent?.getBooleanExtra("show_crash_dialog", false) ?: false
+        val crashPath = TerminalApplication.pendingCrashReportPath
 
         setContent {
             MaterialTheme(
@@ -130,6 +134,12 @@ class MainActivity : ComponentActivity() {
                     surface = Color(0xFF1E1E1E)
                 )
             ) {
+                if (showCrashDialog && crashPath != null) {
+                    CrashReportDialog(
+                        crashPath = crashPath,
+                        onDismiss = { /* handled inside */ }
+                    )
+                }
                 MainScreen()
             }
         }
@@ -331,6 +341,62 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         DebugLogger.i(TAG, "MainActivity onStop")
         super.onStop()
+    }
+
+    @Composable
+    fun CrashReportDialog(crashPath: String, onDismiss: () -> Unit) {
+        var showDialog by remember { mutableStateOf(true) }
+
+        if (showDialog) {
+            AlertDialog(
+                onDismissRequest = {
+                    showDialog = false
+                    TerminalApplication.pendingCrashReportPath = null
+                },
+                icon = {
+                    Icon(Icons.Outlined.BugReport, contentDescription = null)
+                },
+                title = { Text("Crash detectado") },
+                text = {
+                    Text("La aplicación se cerró inesperadamente en la sesión anterior. " +
+                            "¿Deseas compartir el reporte de crash para ayudar a corregir el error?")
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showDialog = false
+                        TerminalApplication.pendingCrashReportPath = null
+                        try {
+                            val file = File(crashPath)
+                            if (file.exists()) {
+                                val uri = FileProvider.getUriForFile(
+                                    this@MainActivity,
+                                    "${packageName}.fileprovider",
+                                    file
+                                )
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    type = "text/plain"
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                startActivity(Intent.createChooser(intent, "Compartir reporte de crash"))
+                            }
+                        } catch (e: Exception) {
+                            DebugLogger.e(TAG, "Error sharing crash report", e)
+                        }
+                    }) {
+                        Text("Compartir reporte")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showDialog = false
+                        TerminalApplication.pendingCrashReportPath = null
+                    }) {
+                        Text("Descartar")
+                    }
+                }
+            )
+        }
     }
 
     companion object {
