@@ -26,6 +26,10 @@ open class TerminalBridge(
             terminalView?.setTextSize(field)
         }
 
+    init {
+        terminalView?.setTextSize(fontSize)
+    }
+
     fun changeFontSize(increase: Boolean) {
         fontSize += if (increase) 1 else -1
     }

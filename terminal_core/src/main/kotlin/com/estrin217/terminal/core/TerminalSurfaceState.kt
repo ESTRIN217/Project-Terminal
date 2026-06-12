@@ -39,6 +39,7 @@ class TerminalSurfaceState(
         this.terminalSession = session
         val view = terminalView
         if (view != null) {
+            ensureRendererInitialized(view)
             view.attachSession(session)
             DebugLogger.i("TerminalSurfaceState", "Session attached to TerminalView")
             onSessionReady?.invoke(session, view)
@@ -47,11 +48,18 @@ class TerminalSurfaceState(
 
     fun attachView(view: TerminalView) {
         this.terminalView = view
+        ensureRendererInitialized(view)
         val session = terminalSession
         if (session != null) {
             view.attachSession(session)
             DebugLogger.i("TerminalSurfaceState", "View attached and session bound")
             onSessionReady?.invoke(session, view)
+        }
+    }
+
+    private fun ensureRendererInitialized(view: TerminalView) {
+        if (view.mRenderer == null) {
+            view.setTextSize(12)
         }
     }
 
