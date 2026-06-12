@@ -27,10 +27,19 @@ object DebugLogger {
     val level: LogLevel,
     val tag: String,
     val threadName: String, // ¡Nuevo!
-    val message: String
+    val message: String,
+    val component: String? = null,
+    val sessionId: String? = null,
+    val pid: String? = null
     ) {
     override fun toString(): String {
-        return "[$timestamp] [$level] [$threadName] [$tag] $message"
+        return buildString {
+            append("[$timestamp] [$level] [$threadName] [$tag]")
+            component?.let { append(" [component=$it]") }
+            sessionId?.let { append(" [session=$it]") }
+            pid?.let { append(" [pid=$it]") }
+            append(" $message")
+        }
     }
     }
 
@@ -87,6 +96,33 @@ object DebugLogger {
             logs.removeAt(0)
         }
     }
+    }
+
+    fun addDiagnosticLog(log: com.estrin217.terminal.core.logger.DiagnosticLog) {
+        synchronized(logLock) {
+            val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date(log.timestamp))
+            val logLevel = when (log.severity) {
+                com.estrin217.terminal.core.logger.LogSeverity.TRACE,
+                com.estrin217.terminal.core.logger.LogSeverity.DEBUG -> LogLevel.DEBUG
+                com.estrin217.terminal.core.logger.LogSeverity.INFO -> LogLevel.INFO
+                com.estrin217.terminal.core.logger.LogSeverity.WARN -> LogLevel.WARNING
+                com.estrin217.terminal.core.logger.LogSeverity.ERROR -> LogLevel.ERROR
+            }
+            val entry = LogEntry(
+                timestamp = timestamp,
+                level = logLevel,
+                tag = "[${log.component.name}] ${log.threadName}",
+                threadName = log.threadName,
+                message = log.message,
+                component = log.component.name,
+                sessionId = log.metadata["session"],
+                pid = log.metadata["pid"]
+            )
+            logs.add(entry)
+            if (logs.size > maxLogs) {
+                logs.removeAt(0)
+            }
+        }
     }
 
     /**

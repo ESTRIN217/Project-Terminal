@@ -180,14 +180,6 @@ class LogcatSink : DiagnosticSink {
 
 class DebugLoggerSink : DiagnosticSink {
     override fun dispatch(log: DiagnosticLog) {
-        val tag = "[${log.component.name}] ${log.threadName}"
-        val msg = log.message
-
-        when (log.severity) {
-            LogSeverity.TRACE, LogSeverity.DEBUG -> DebugLogger.d(tag, msg)
-            LogSeverity.INFO -> DebugLogger.i(tag, msg)
-            LogSeverity.WARN -> DebugLogger.w(tag, msg)
-            LogSeverity.ERROR -> DebugLogger.e(tag, msg, log.exception)
-        }
+        DebugLogger.addDiagnosticLog(log)
     }
 }

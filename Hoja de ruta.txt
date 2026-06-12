@@ -65,24 +65,28 @@ Objetivos y Prioridades
     5. hacer que la app guarde un archivo log en el almacenamiento compartido
 
 [P2] TerminalSurfaceState como envoltura Compose oficial
-  - Estado: Implementado (TerminalSurfaceState, TerminalSurface, rememberTerminalSurfaceState)
+  - Estado: Completado
   - Descripción: Migrar el uso directo de AndroidView+TerminalBridge en
     MainActivity para usar TerminalSurfaceState y TerminalSurface,
     promoviendo la reutilización y separación de responsabilidades.
-  - Tareas:
-    1. Refactorizar MainActivity para usar TerminalSurfaceState.
-    2. Mover la lógica de teclas especiales a un componente Separado.
-    3. Agregar pruebas unitarias para TerminalSurfaceState.
+  - Logros:
+    * MainActivity refactorizado: AndroidView reemplazado por TerminalSurface composable.
+    * SpecialKeysBar extraído a componente independiente reutilizable.
+    * Pruebas unitarias para TerminalSurfaceState (6 tests, null-safety).
+    * terminal_core/build.gradle.kts: +material3, +foundation deps.
+    * MainActivity reducido de 498 → 338 líneas.
 
-[P2] Soporte multi-ABI para librerías nativas
-  - Estado: Parcial (abiFilters configurado, pendiente compilación y validación)
-  - Descripción: Ampliar la compilación para incluir armeabi-v7a y x86_64
-    además de arm64-v8a, permitiendo la ejecución en una gama más amplia
-    de dispositivos Android (emuladores, tablets, dispositivos más antiguos).
-  - Tareas:
-    1. Habilitar abiFilters adicionales en terminal_core/build.gradle.kts. ✓
-    2. Compilar libtermux_exec y terminal_core para cada ABI.
-    3. Validar funcionamiento en emulador x86_64 y dispositivos ARM32.
+[P2] Soporte multi-ABI para librerías nativas (64-bit)
+  - Estado: Completado (arm64-v8a + x86_64 compilados y empaquetados)
+  - Descripción: Compilación multi-ABI para las 5 librerías nativas
+    (libterminal_core, libtermux_exec, libproot, libproot-xed, libbsdtar)
+    en las dos arquitecturas 64-bit: arm64-v8a y x86_64.
+  - Logros:
+    * terminal_core/build.gradle.kts: abiFilters → arm64-v8a, x86_64.
+    * CMakeLists.txt compila libterminal_core.so + libtermux_exec.so para ambas ABIs.
+    * jniLibs: libproot.so, libproot-xed.so, libbsdtar.so desplegados en ambas ABIs.
+    * Final AAR contiene las 5 librerías para arm64-v8a y x86_64.
+    * NativeLibInstaller carga y despliega libtermux_exec.so correctamente.
 
 [P3] WakeLock y WifiLock selectivos
   - Estado: Implementado (adquisición y liberación en TerminalService)

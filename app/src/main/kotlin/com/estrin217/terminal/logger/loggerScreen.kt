@@ -214,6 +214,31 @@ fun LogItemRow(log: DebugLogger.LogEntry) {
             )
         }
         Spacer(modifier = Modifier.height(4.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            log.component?.let {
+                Text(
+                    text = "cmp:$it",
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            }
+            log.sessionId?.let {
+                Text(
+                    text = "ses:$it",
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            }
+            log.pid?.let {
+                Text(
+                    text = "pid:$it",
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            }
+        }
         Text(
             text = log.tag,
             style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),

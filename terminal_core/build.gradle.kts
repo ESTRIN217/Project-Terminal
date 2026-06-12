@@ -13,9 +13,9 @@ android {
     defaultConfig {
         minSdk = 26 // Android 8.0 mínimo para soporte PTY decente
         
-        // Forzamos a que solo maneje arm64-v8a para optimizar tus compilaciones
+        // Solo 64-bit: arm64-v8a (dispositivos físicos) y x86_64 (emulador)
         ndk {
-            abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86"))
+            abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
         }
     }
 
@@ -64,6 +64,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.compose.runtime)
     implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.compose.material3)
     
     testImplementation(libs.junit)
 }

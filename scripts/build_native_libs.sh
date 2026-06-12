@@ -14,9 +14,7 @@ API_LEVEL=26
 
 ABIS=(
     "arm64-v8a:aarch64-linux-android"
-    "armeabi-v7a:armv7a-linux-androideabi"
     "x86_64:x86_64-linux-android"
-    "x86:i686-linux-android"
 )
 
 log() { echo "[BUILD] $*"; }
@@ -45,9 +43,10 @@ check_prereqs() {
 # ──────────────────────────────────────────────
 build_talloc() {
     local src_dir="$BUILD_DIR/talloc"
-    if [ ! -d "$src_dir" ]; then
-        log "Cloning talloc..."
-        git clone --depth 1 https://git.samba.org/talloc.git "$src_dir"
+    if [ ! -f "$src_dir/talloc.c" ]; then
+        log "talloc source not found at $src_dir"
+        log "Please download https://download.samba.org/pub/talloc/talloc-2.4.2.tar.gz"
+        exit 1
     fi
 
     for abi_entry in "${ABIS[@]}"; do
@@ -56,32 +55,34 @@ build_talloc() {
         local install_dir="$OUTPUT_DIR/talloc/$abi"
 
         log "Building talloc for $abi..."
-        mkdir -p "$install_dir"
+        mkdir -p "$install_dir/include"
 
-        pushd "$src_dir" >/dev/null
+        local toolchain="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin"
+        local cc="$toolchain/${host}${API_LEVEL}-clang"
+        local ar="$toolchain/llvm-ar"
 
-        # talloc uses waf, which doesn't support Android cross-compile easily.
-        # Build using standalone toolchain + manual compilation.
-        local toolchain_dir="$BUILD_DIR/toolchains/$abi"
-        if [ ! -d "$toolchain_dir" ]; then
-            "$NDK_DIR/build/tools/make_standalone_toolchain.py" \
-                --arch "$(echo "$abi" | sed 's/arm64-v8a/arm64/;s/armeabi-v7a/arm/;s/x86_64/x86_64/;s/x86/x86/')" \
-                --api "$API_LEVEL" \
-                --install-dir "$toolchain_dir"
+        local build_abi="$BUILD_DIR/talloc/build_$abi"
+        mkdir -p "$build_abi"
+
+        pushd "$build_abi" >/dev/null
+        local talloc_src="$src_dir/talloc-2.4.2"
+        "$cc" -c -fPIC -Os \
+            -I"$talloc_src" -I"$talloc_src/lib/replace" \
+            -DTALLOC_BUILD_VERSION_MAJOR=2 \
+            -DTALLOC_BUILD_VERSION_MINOR=4 \
+            -DTALLOC_BUILD_VERSION_RELEASE=2 \
+            -DHAVE___ATTRIBUTE__ \
+            -DHAVE_VA_COPY \
+            "$talloc_src/talloc.c" -o "talloc.o" 2>&1
+        if [ -f "talloc.o" ]; then
+            "$ar" rcs "$install_dir/libtalloc.a" "talloc.o"
+            cp "$talloc_src/talloc.h" "$install_dir/include/"
+            log "  -> $install_dir/libtalloc.a"
+        else
+            log "  ERROR: talloc compilation failed"
+            return 1
         fi
-
-        export CC="$toolchain_dir/bin/${host}${API_LEVEL}-clang"
-        export AR="$toolchain_dir/bin/llvm-ar"
-        export RANLIB="$toolchain_dir/bin/llvm-ranlib"
-        export CFLAGS="-Os -fPIC"
-        export LDFLAGS="-Wl,--gc-sections"
-
-        ./configure --prefix="$install_dir" --host="$host" --disable-python --enable-talloc-compat1
-        make -j"$JOBS"
-        make install
-
-        # Copy result
-        cp "$install_dir/lib/libtalloc.so" "$install_dir/libtalloc.so" 2>/dev/null || true
+        log "  -> $install_dir/libtalloc.a"
         popd >/dev/null
     done
     log "talloc built for all ABIs"
@@ -129,7 +130,11 @@ build_bsdtar() {
             -DCMAKE_BUILD_TYPE=Release
 
         cmake --build . --target bsdtar -- -j"$JOBS"
-        cmake --install .
+
+        if [ -f "bin/bsdtar" ]; then
+            cp "bin/bsdtar" "$install_dir/bsdtar"
+            log "bsdtar binary copied to $install_dir/bsdtar"
+        fi
 
         popd >/dev/null
     done
@@ -144,7 +149,6 @@ build_proot() {
     if [ ! -d "$src_dir" ]; then
         log "Cloning PRoot..."
         git clone --depth 1 https://github.com/proot-me/proot.git "$src_dir"
-        # Also fetch talloc submodule (PRoot uses talloc)
         pushd "$src_dir" >/dev/null
         git submodule update --init 2>/dev/null || true
         popd >/dev/null
@@ -158,63 +162,58 @@ build_proot() {
         log "Building PRoot for $abi..."
         mkdir -p "$install_dir"
 
-        local build_abi="$BUILD_DIR/proot/build_$abi"
-        mkdir -p "$build_abi"
-        pushd "$build_abi" >/dev/null
+        local toolchain="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin"
+        local cc="$toolchain/${host}${API_LEVEL}-clang"
+        local ar="$toolchain/llvm-ar"
+        local strip="$toolchain/llvm-strip"
+        local objcopy="$toolchain/llvm-objcopy"
+        local objdump="$toolchain/llvm-objdump"
+        local talloc_install="$OUTPUT_DIR/talloc/$abi"
+        local vpath="$src_dir/src"
 
-        # PRoot uses a custom build system (GNU Make based).
-        # We configure via environment variables for cross-compilation.
-        local toolchain_dir="$BUILD_DIR/toolchains/$abi"
-        if [ ! -d "$toolchain_dir" ]; then
-            "$NDK_DIR/build/tools/make_standalone_toolchain.py" \
-                --arch "$(echo "$abi" | sed 's/arm64-v8a/arm64/;s/armeabi-v7a/arm/;s/x86_64/x86_64/;s/x86/x86/')" \
-                --api "$API_LEVEL" \
-                --install-dir "$toolchain_dir"
+        local cppflags="-D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE -I. -I$vpath -I$vpath/../lib/uthash/include -I$talloc_install/include"
+
+        # Build proot variant (PROOT_NO_SECCOMP=1)
+        log "  Building libproot.so ($abi)..."
+        make -C "$src_dir/src" -j"$JOBS" clean 2>/dev/null || true
+        make -C "$src_dir/src" -j"$JOBS" \
+            CC="$cc" \
+            LD="$cc" \
+            AR="$ar" \
+            STRIP="$strip" \
+            OBJCOPY="$objcopy" \
+            OBJDUMP="$objdump" \
+            CPPFLAGS="$cppflags" \
+            CFLAGS="-Os -fPIE -DPROOT_NO_SECCOMP=1 -Wno-implicit-function-declaration -Wno-int-conversion" \
+            LDFLAGS="-fPIE -pie -static -Wl,-z,noexecstack -L$talloc_install -ltalloc" \
+            V=0 \
+            proot 2>&1 | tail -20
+
+        if [ -f "$src_dir/src/proot" ]; then
+            cp "$src_dir/src/proot" "$install_dir/libproot.so"
+            log "  -> $install_dir/libproot.so"
         fi
 
-        export CC="$toolchain_dir/bin/${host}${API_LEVEL}-clang"
-        export LD="$toolchain_dir/bin/${host}${API_LEVEL}-clang"
-        export AR="$toolchain_dir/bin/llvm-ar"
-        export CFLAGS="-Os -fPIE -DPROOT_NO_SECCOMP=1 -DNO_TALLOC"
-        export LDFLAGS="-fPIE -pie -static"
-        export CPPFLAGS="-I$BUILD_DIR/talloc/$abi/include"
+        # Build proot-xed variant (without PROOT_NO_SECCOMP, so seccomp enabled)
+        log "  Building libproot-xed.so ($abi)..."
+        make -C "$src_dir/src" -j"$JOBS" clean 2>/dev/null || true
+        make -C "$src_dir/src" -j"$JOBS" \
+            CC="$cc" \
+            LD="$cc" \
+            AR="$ar" \
+            STRIP="$strip" \
+            OBJCOPY="$objcopy" \
+            OBJDUMP="$objdump" \
+            CPPFLAGS="$cppflags" \
+            CFLAGS="-Os -fPIE -Wno-implicit-function-declaration -Wno-int-conversion" \
+            LDFLAGS="-fPIE -pie -static -Wl,-z,noexecstack -L$talloc_install -ltalloc" \
+            V=0 \
+            proot 2>&1 | tail -20
 
-        make -C "$src_dir" -j"$JOBS" \
-            CC="$CC" \
-            LD="$LD" \
-            AR="$AR" \
-            CFLAGS="$CFLAGS" \
-            LDFLAGS="$LDFLAGS" \
-            CPPFLAGS="$CPPFLAGS" \
-            DESTDIR="$install_dir" \
-            install
-
-        # The result is typically called 'proot' or 'proot-xed'.
-        # Rename to libproot.so (Android convention for jniLibs executables).
-        if [ -f "$install_dir/bin/proot" ]; then
-            cp "$install_dir/bin/proot" "$install_dir/libproot.so"
-        elif [ -f "$src_dir/proot" ]; then
-            cp "$src_dir/proot" "$install_dir/libproot.so"
+        if [ -f "$src_dir/src/proot" ]; then
+            cp "$src_dir/src/proot" "$install_dir/libproot-xed.so"
+            log "  -> $install_dir/libproot-xed.so"
         fi
-
-        # Build proot-xed variant (without seccomp compiled out completely)
-        make -C "$src_dir" clean 2>/dev/null || true
-        export CFLAGS="-Os -fPIE -DNO_TALLOC"
-        export LDFLAGS="-fPIE -pie -static"
-        make -C "$src_dir" -j"$JOBS" \
-            CC="$CC" \
-            LD="$LD" \
-            AR="$AR" \
-            CFLAGS="$CFLAGS" \
-            LDFLAGS="$LDFLAGS" \
-            CPPFLAGS="$CPPFLAGS" \
-            proot-xed
-
-        if [ -f "$src_dir/proot-xed" ]; then
-            cp "$src_dir/proot-xed" "$install_dir/libproot-xed.so"
-        fi
-
-        popd >/dev/null
     done
     log "PRoot built for all ABIs"
 }
@@ -290,7 +289,10 @@ deploy() {
         fi
 
         # libbsdtar.so
-        if [ -f "$OUTPUT_DIR/bsdtar/$abi/bin/bsdtar" ]; then
+        if [ -f "$OUTPUT_DIR/bsdtar/$abi/bsdtar" ]; then
+            cp "$OUTPUT_DIR/bsdtar/$abi/bsdtar" "$target_dir/libbsdtar.so"
+            log "  -> $abi/libbsdtar.so"
+        elif [ -f "$OUTPUT_DIR/bsdtar/$abi/bin/bsdtar" ]; then
             cp "$OUTPUT_DIR/bsdtar/$abi/bin/bsdtar" "$target_dir/libbsdtar.so"
             log "  -> $abi/libbsdtar.so"
         elif [ -f "$OUTPUT_DIR/bsdtar/$abi/libbsdtar.so" ]; then
@@ -329,7 +331,6 @@ usage() {
     echo "  talloc    - Build talloc only"
     echo "  bsdtar    - Build bsdtar only"
     echo "  proot     - Build PRoot (proot + proot-xed)"
-    echo "  proot32   - Build 32-bit PRoot"
     echo "  deploy    - Deploy outputs to jniLibs"
     echo "  info      - Show configuration"
     echo ""
@@ -343,14 +344,12 @@ case "${1:-all}" in
         build_talloc
         build_bsdtar
         build_proot
-        build_proot32
         deploy
         log "All native libs built and deployed!"
         ;;
     talloc)   check_prereqs; build_talloc; deploy ;;
     bsdtar)   check_prereqs; build_bsdtar; deploy ;;
     proot)    check_prereqs; build_proot; deploy ;;
-    proot32)  check_prereqs; build_proot32; deploy ;;
     deploy)   deploy ;;
     info)     info ;;
     *)        usage; exit 1 ;;

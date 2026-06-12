@@ -7,15 +7,12 @@ import android.content.ServiceConnection
 import android.net.Uri
 import android.os.Bundle
 import android.os.IBinder
-import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,17 +24,18 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.estrin217.terminal.core.LocaleManager
 import com.estrin217.terminal.core.RootfsManager
 import com.estrin217.terminal.core.TerminalBridge
 import com.estrin217.terminal.core.TerminalConfig
 import com.estrin217.terminal.core.TerminalService
+import com.estrin217.terminal.core.TerminalSurface
+import com.estrin217.terminal.core.TerminalSurfaceState
+import com.estrin217.terminal.core.SpecialKeysBar
+import com.estrin217.terminal.core.rememberTerminalSurfaceState
 import com.estrin217.terminal.core.logger.DebugLogger
 import com.estrin217.terminal.core.ConnectivityUtils
 import com.estrin217.terminal.logger.LoggerActivity
-import com.termux.terminal.TerminalSession
-import com.termux.view.TerminalView
 import java.io.File
 import java.io.IOException
 
@@ -45,14 +43,13 @@ class MainActivity : ComponentActivity() {
 
     private var terminalService: TerminalService? = null
     private var terminalBridge: TerminalBridge? = null
-    private var terminalSession: TerminalSession? = null
     private var isBound = false
+    private var terminalSurfaceStateRef: TerminalSurfaceState? = null
 
     private val isInstallingState = mutableStateOf(false)
     private val progressTextState = mutableStateOf("")
     private val controlActiveState = mutableStateOf(false)
     private val altActiveState = mutableStateOf(false)
-    private var terminalViewInstance: TerminalView? = null
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -184,9 +181,9 @@ class MainActivity : ComponentActivity() {
         DebugLogger.i(TAG, "Setting up terminal session and attaching to TerminalView")
         val service = terminalService ?: return
         val bridge = terminalBridge ?: return
+        val state = terminalSurfaceStateRef ?: return
         val session = service.createOrGetSession(this, bridge)
-        terminalSession = session
-        terminalViewInstance?.attachSession(session)
+        state.attachSession(session)
         DebugLogger.i(TAG, "Terminal session successfully attached")
     }
 
@@ -204,6 +201,8 @@ class MainActivity : ComponentActivity() {
         val controlActive by controlActiveState
         val altActive by altActiveState
         val context = LocalContext.current
+        val state = rememberTerminalSurfaceState()
+        terminalSurfaceStateRef = state
 
         Column(
             modifier = Modifier
@@ -215,27 +214,20 @@ class MainActivity : ComponentActivity() {
                     .fillMaxWidth()
                     .weight(1f)
             ) {
-                // Host the native Termux TerminalView inside AndroidView
-                AndroidView(
-                    factory = { ctx ->
-                        TerminalView(ctx, null).also { view ->
-                            terminalViewInstance = view
-                            terminalBridge = TerminalBridge(ctx, view).apply {
-                                modifierKeyConsumedListener = object : TerminalBridge.OnModifierKeyConsumedListener {
-                                    override fun onControlKeyConsumed() {
-                                        runOnUiThread { controlActiveState.value = false }
-                                    }
-
-                                    override fun onAltKeyConsumed() {
-                                        runOnUiThread { altActiveState.value = false }
-                                    }
-                                }
+                TerminalSurface(
+                    state = state,
+                    onBridgeCreated = { bridge ->
+                        terminalBridge = bridge
+                        bridge.modifierKeyConsumedListener = object : TerminalBridge.OnModifierKeyConsumedListener {
+                            override fun onControlKeyConsumed() {
+                                controlActiveState.value = false
                             }
-                            view.setTerminalViewClient(terminalBridge)
 
-                            // If service already connected, attach the session now
-                            onBridgeReady()
+                            override fun onAltKeyConsumed() {
+                                altActiveState.value = false
+                            }
                         }
+                        onBridgeReady()
                     },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -285,181 +277,30 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // Special Keys Bar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF1A1A1A))
-                    .padding(vertical = 4.dp)
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Spacer(modifier = Modifier.width(4.dp))
-
-                // CTRL
-                Button(
-                    onClick = {
-                        val bridge = terminalBridge ?: return@Button
-                        bridge.controlKeyPressed = !bridge.controlKeyPressed
-                        controlActiveState.value = bridge.controlKeyPressed
-                        terminalViewInstance?.requestFocus()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (controlActive) Color(0xFF4F378B) else Color(0xFF2E2D30)
-                    ),
-                    modifier = Modifier.widthIn(min = 64.dp)
-                ) {
-                    Text("CTRL", fontSize = 11.sp, color = Color(0xFFE8DEF8), fontWeight = FontWeight.Bold)
+            SpecialKeysBar(
+                state = state,
+                bridge = terminalBridge,
+                controlActive = controlActive,
+                altActive = altActive,
+                onControlKeyChanged = { controlActiveState.value = it },
+                onAltKeyChanged = { altActiveState.value = it },
+                onNavigateToLogger = {
+                    DebugLogger.i(TAG, "Navigating to LoggerActivity")
+                    val intent = Intent(context, LoggerActivity::class.java)
+                    context.startActivity(intent)
+                },
+                onPickRootfs = {
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "*/*"
+                        putExtra(
+                            Intent.EXTRA_MIME_TYPES,
+                            arrayOf("application/x-xz", "application/gzip", "application/x-tar", "application/octet-stream")
+                        )
+                    }
+                    pickRootfsLauncher.launch(intent)
                 }
-
-                // ALT
-                Button(
-                    onClick = {
-                        val bridge = terminalBridge ?: return@Button
-                        bridge.altKeyPressed = !bridge.altKeyPressed
-                        altActiveState.value = bridge.altKeyPressed
-                        terminalViewInstance?.requestFocus()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (altActive) Color(0xFF4F378B) else Color(0xFF2E2D30)
-                    ),
-                    modifier = Modifier.widthIn(min = 64.dp)
-                ) {
-                    Text("ALT", fontSize = 11.sp, color = Color(0xFFE8DEF8), fontWeight = FontWeight.Bold)
-                }
-
-                // ESC
-                Button(
-                    onClick = {
-                        terminalSession?.write("\u001B")
-                        terminalViewInstance?.requestFocus()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2D30)),
-                    modifier = Modifier.widthIn(min = 60.dp)
-                ) {
-                    Text("ESC", fontSize = 11.sp, color = Color.White)
-                }
-
-                // TAB
-                Button(
-                    onClick = {
-                        terminalSession?.write("\t")
-                        terminalViewInstance?.requestFocus()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2D30)),
-                    modifier = Modifier.widthIn(min = 60.dp)
-                ) {
-                    Text("TAB", fontSize = 11.sp, color = Color.White)
-                }
-
-                // UP
-                Button(
-                    onClick = {
-                        terminalSession?.write("\u001B[A")
-                        terminalViewInstance?.requestFocus()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2D30)),
-                    modifier = Modifier.widthIn(min = 48.dp)
-                ) {
-                    Text("▲", fontSize = 11.sp, color = Color.White)
-                }
-
-                // DOWN
-                Button(
-                    onClick = {
-                        terminalSession?.write("\u001B[B")
-                        terminalViewInstance?.requestFocus()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2D30)),
-                    modifier = Modifier.widthIn(min = 48.dp)
-                ) {
-                    Text("▼", fontSize = 11.sp, color = Color.White)
-                }
-
-                // LEFT
-                Button(
-                    onClick = {
-                        terminalSession?.write("\u001B[D")
-                        terminalViewInstance?.requestFocus()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2D30)),
-                    modifier = Modifier.widthIn(min = 48.dp)
-                ) {
-                    Text("◀", fontSize = 11.sp, color = Color.White)
-                }
-
-                // RIGHT
-                Button(
-                    onClick = {
-                        terminalSession?.write("\u001B[C")
-                        terminalViewInstance?.requestFocus()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2D30)),
-                    modifier = Modifier.widthIn(min = 48.dp)
-                ) {
-                    Text("▶", fontSize = 11.sp, color = Color.White)
-                }
-
-                // CLR
-                Button(
-                    onClick = {
-                        terminalSession?.write("clear\n")
-                        terminalViewInstance?.requestFocus()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2D30)),
-                    modifier = Modifier.widthIn(min = 60.dp)
-                ) {
-                    Text("CLR", fontSize = 11.sp, color = Color(0xFFF2B8B5))
-                }
-
-                // KEY
-                Button(
-                    onClick = {
-                        terminalViewInstance?.requestFocus()
-                        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-                        imm?.showSoftInput(terminalViewInstance, 0)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2D30)),
-                    modifier = Modifier.widthIn(min = 60.dp)
-                ) {
-                    Text("KEY", fontSize = 11.sp, color = Color(0xFFD0BCFF))
-                }
-
-                // LOG
-                Button(
-                    onClick = {
-                        DebugLogger.i(TAG, "Navigating to LoggerActivity")
-                        val intent = Intent(context, LoggerActivity::class.java)
-                        context.startActivity(intent)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2D30)),
-                    modifier = Modifier.widthIn(min = 60.dp)
-                ) {
-                    Text("LOG", fontSize = 11.sp, color = Color(0xFFA8DADC))
-                }
-
-                // IMPORT
-                Button(
-                    onClick = {
-                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                            addCategory(Intent.CATEGORY_OPENABLE)
-                            type = "*/*"
-                            putExtra(
-                                Intent.EXTRA_MIME_TYPES,
-                                arrayOf("application/x-xz", "application/gzip", "application/x-tar", "application/octet-stream")
-                            )
-                        }
-                        pickRootfsLauncher.launch(intent)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2D30)),
-                    modifier = Modifier.widthIn(min = 72.dp)
-                ) {
-                    Text("IMPORT", fontSize = 11.sp, color = Color(0xFFFFD166))
-                }
-
-                Spacer(modifier = Modifier.width(4.dp))
-            }
+            )
         }
     }
 
