@@ -114,6 +114,8 @@ static int create_subprocess(JNIEnv* env,
     }
 }
 
+extern "C" {
+
 JNIEXPORT jint JNICALL Java_com_termux_terminal_JNI_createSubprocess(
         JNIEnv* env,
         jclass TERMUX_UNUSED(clazz),
@@ -216,3 +218,5 @@ JNIEXPORT void JNICALL Java_com_termux_terminal_JNI_close(JNIEnv* TERMUX_UNUSED(
 {
     close(fileDescriptor);
 }
+
+} // extern "C"
