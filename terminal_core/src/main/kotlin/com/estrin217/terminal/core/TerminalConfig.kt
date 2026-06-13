@@ -56,7 +56,6 @@ object TerminalConfig {
             "USER=programador",
             "LOGNAME=programador",
             "LANG=es_VE.UTF-8",
-            "LD_PRELOAD=/data_priv/lib/libtermux_exec.so",
             "PROOT_TMP_DIR=$tmpPath",
             "PROOT_NO_SECCOMP=1",
         )

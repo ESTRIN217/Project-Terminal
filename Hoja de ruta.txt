@@ -22,7 +22,8 @@ Objetivos y Prioridades
     * loggerScreen.kt y LoggerViewModel.kt migrados de hardcoded a traducciones.
 
 [P1] Integración completa del bypass W^X (libtermux_exec)
-  - Estado: Completado
+  - Estado: Corregido — LD_PRELOAD eliminado del entorno inicial por
+    conflicto con PRoot (exit code 255). Ver [FIX] abajo.
   - Descripción: libtermux_exec.so ahora se copia automáticamente desde el
     nativeLibraryDir a /data/data/.../lib/ al iniciar TerminalService,
     asegurando que LD_PRELOAD=/data_priv/lib/libtermux_exec.so funcione
@@ -36,6 +37,23 @@ Objetivos y Prioridades
     * is_under_proot_rootfs() excluye /system/, /apex/, /dev/, /proc/,
       /sys/, /data_priv/ (solo intercepta rootfs Debian).
     * TerminalService.onCreate() despliega la lib antes de crear sesiones.
+
+  - [FIX] Conflicto LD_PRELOAD + PRoot (exit 255):
+    * Problema: libtermux_exec.so hookea execve() y reescribe argv para usar
+      /system/bin/linker64. PRoot intercepta ese execve vía ptrace y traduce
+      /system/bin/linker64 → <rootfs>/system/bin/linker64, que no existe en
+      Debian. PRoot termina con exit code 255.
+    * Solución actual: Se eliminó LD_PRELOAD del entorno en
+      TerminalConfig.getEnvironmentVariables() para que el terminal arranque.
+    * Recomendación futura (P1 alto): Reactivar LD_PRELOAD correctamente
+      mediante una de estas opciones:
+      a) Añadir bind mount de /system/bin/linker64 en PRoot args:
+         "-b", "/system/bin/linker64"  (o "-b /system" completo)
+      b) Modificar termux_exec.cpp para detectar PRoot y no hookear execve
+         durante la inicialización del tracee.
+      c) Cargar LD_PRELOAD desde un script de perfil (~/.bashrc, /etc/profile)
+         en lugar del entorno inicial del proceso.
+      d) Usar /etc/ld.so.preload dentro del rootfs en lugar de LD_PRELOAD.
 
 [P1] Soportes de PRoot y librerías nativas completas
   - Estado: Completado (scripts de compilación + configuración multi-ABI)
