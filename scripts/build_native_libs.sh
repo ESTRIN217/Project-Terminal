@@ -154,6 +154,16 @@ build_proot() {
         popd >/dev/null
     fi
 
+    # Create TLS alignment fix assembly (forces PT_TLS p_align >= 64 for ARM64 Bionic)
+    local tls_fix_src="$BUILD_DIR/tls_align_fix.s"
+    if [ ! -f "$tls_fix_src" ]; then
+        cat > "$tls_fix_src" << 'EOF'
+.section .tdata,"awT",%progbits
+.p2align 6
+.space 1
+EOF
+    fi
+
     for abi_entry in "${ABIS[@]}"; do
         local abi="${abi_entry%%:*}"
         local host="${abi_entry#*:}"
@@ -173,6 +183,12 @@ build_proot() {
 
         local cppflags="-D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE -I. -I$vpath -I$vpath/../lib/uthash/include -I$talloc_install/include"
 
+        # Compile TLS alignment fix object for this ABI
+        local tls_fix_obj="$BUILD_DIR/tls_align_fix_$abi.o"
+        "$cc" -c -o "$tls_fix_obj" "$tls_fix_src" 2>&1
+
+        local base_ldflags="-fPIE -pie -static -Wl,-z,noexecstack -L$talloc_install -ltalloc $tls_fix_obj"
+
         # Build proot variant (PROOT_NO_SECCOMP=1)
         log "  Building libproot.so ($abi)..."
         make -C "$src_dir/src" -j"$JOBS" clean 2>/dev/null || true
@@ -185,7 +201,7 @@ build_proot() {
             OBJDUMP="$objdump" \
             CPPFLAGS="$cppflags" \
             CFLAGS="-Os -fPIE -DPROOT_NO_SECCOMP=1 -Wno-implicit-function-declaration -Wno-int-conversion" \
-            LDFLAGS="-fPIE -pie -static -Wl,-z,noexecstack -L$talloc_install -ltalloc" \
+            LDFLAGS="$base_ldflags" \
             V=0 \
             proot 2>&1 | tail -20
 
@@ -206,7 +222,7 @@ build_proot() {
             OBJDUMP="$objdump" \
             CPPFLAGS="$cppflags" \
             CFLAGS="-Os -fPIE -Wno-implicit-function-declaration -Wno-int-conversion" \
-            LDFLAGS="-fPIE -pie -static -Wl,-z,noexecstack -L$talloc_install -ltalloc" \
+            LDFLAGS="$base_ldflags" \
             V=0 \
             proot 2>&1 | tail -20
 
