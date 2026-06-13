@@ -56,7 +56,7 @@ object TerminalConfig {
             "USER=programador",
             "LOGNAME=programador",
             "LANG=es_VE.UTF-8", // Idioma prioritario según GEMINI.md
-            "PROOT_TMPDIR=$tmpPath",
+            "PROOT_TMP_DIR=$tmpPath",
             "PROOT_NO_SECCOMP=1", // Desactiva seccomp para mayor compatibilidad
             "LD_PRELOAD=/data_priv/lib/libtermux_exec.so" // Bypass W^X via linker wrapper
         )
