@@ -128,7 +128,7 @@ public final class TerminalSession extends TerminalOutput {
         mEmulator = new TerminalEmulator(this, columns, rows, cellWidthPixels, cellHeightPixels, mTranscriptRows, mClient);
 
         // Log startup parameters for debugging
-        Logger.logInfo(LOG_TAG, "initializeEmulator: shellPath=" + mShellPath + ", cwd=" + mCwd);
+        Logger.logInfo(mClient, LOG_TAG, "initializeEmulator: shellPath=" + mShellPath + ", cwd=" + mCwd);
         if (mArgs != null) {
             StringBuilder argsStr = new StringBuilder();
             for (int i = 0; i < Math.min(mArgs.length, 8); i++) {
@@ -136,7 +136,7 @@ public final class TerminalSession extends TerminalOutput {
                 argsStr.append("[").append(i).append("]=").append(mArgs[i]);
             }
             if (mArgs.length > 8) argsStr.append(", ...");
-            Logger.logDebug(LOG_TAG, "args(" + mArgs.length + "): " + argsStr);
+            Logger.logDebug(mClient, LOG_TAG, "args(" + mArgs.length + "): " + argsStr);
         }
         if (mEnv != null) {
             StringBuilder envStr = new StringBuilder();
@@ -145,13 +145,13 @@ public final class TerminalSession extends TerminalOutput {
                 envStr.append(mEnv[i]);
             }
             if (mEnv.length > 10) envStr.append(", ...");
-            Logger.logDebug(LOG_TAG, "env(" + mEnv.length + "): " + envStr);
+            Logger.logDebug(mClient, LOG_TAG, "env(" + mEnv.length + "): " + envStr);
         }
 
         int[] processId = new int[1];
         mTerminalFileDescriptor = JNI.createSubprocess(mShellPath, mCwd, mArgs, mEnv, processId, rows, columns, cellWidthPixels, cellHeightPixels);
         mShellPid = processId[0];
-        Logger.logInfo(LOG_TAG, "createSubprocess returned: fd=" + mTerminalFileDescriptor + ", pid=" + mShellPid);
+        Logger.logInfo(mClient, LOG_TAG, "createSubprocess returned: fd=" + mTerminalFileDescriptor + ", pid=" + mShellPid);
         mClient.setTerminalShellPid(this, mShellPid);
 
         final FileDescriptor terminalFileDescriptorWrapped = wrapFileDescriptor(mTerminalFileDescriptor, mClient);
@@ -270,7 +270,7 @@ public final class TerminalSession extends TerminalOutput {
 
     /** Cleanup resources when the process exits. */
     void cleanupResources(int exitStatus) {
-        Logger.logInfo(LOG_TAG, "cleanupResources: exitStatus=" + exitStatus + ", shellPath=" + mShellPath);
+        Logger.logInfo(mClient, LOG_TAG, "cleanupResources: exitStatus=" + exitStatus + ", shellPath=" + mShellPath);
         synchronized (this) {
             mShellPid = -1;
             mShellExitStatus = exitStatus;
@@ -375,7 +375,7 @@ public final class TerminalSession extends TerminalOutput {
 
             if (msg.what == MSG_PROCESS_EXITED) {
                 int exitCode = (Integer) msg.obj;
-                Logger.logInfo(LOG_TAG, "MSG_PROCESS_EXITED received: exitCode=" + exitCode);
+                Logger.logInfo(mClient, LOG_TAG, "MSG_PROCESS_EXITED received: exitCode=" + exitCode);
                 cleanupResources(exitCode);
 
                 String exitDescription = "\r\n[Process completed";
