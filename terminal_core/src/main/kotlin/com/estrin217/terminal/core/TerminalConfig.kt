@@ -55,9 +55,10 @@ object TerminalConfig {
             "PATH=/usr/bin:/bin:/usr/sbin:/sbin",
             "USER=programador",
             "LOGNAME=programador",
-            "LANG=es_VE.UTF-8", // Idioma prioritario según GEMINI.md
+            "LANG=es_VE.UTF-8",
+            "LD_PRELOAD=/data_priv/lib/libtermux_exec.so",
             "PROOT_TMP_DIR=$tmpPath",
-            "PROOT_NO_SECCOMP=1", // Desactiva seccomp para mayor compatibilidad
+            "PROOT_NO_SECCOMP=1",
         )
     }
 
@@ -77,8 +78,7 @@ object TerminalConfig {
             "-b", "/dev",
             "-b", "/proc",
             "-b", "/sys",
-            "-b", "/data/data/${context.packageName}:/data_priv", // Montaje del directorio privado
-            "-E", "LD_PRELOAD=/data_priv/lib/libtermux_exec.so", // Bypass W^X solo dentro del guest
+            "-b", "/data/data/${context.packageName}:/data_priv",
             "-w", "/home/programador",
             shellCmd
         )
