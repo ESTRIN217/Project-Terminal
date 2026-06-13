@@ -58,7 +58,6 @@ object TerminalConfig {
             "LANG=es_VE.UTF-8", // Idioma prioritario según GEMINI.md
             "PROOT_TMP_DIR=$tmpPath",
             "PROOT_NO_SECCOMP=1", // Desactiva seccomp para mayor compatibilidad
-            "LD_PRELOAD=/data_priv/lib/libtermux_exec.so" // Bypass W^X via linker wrapper
         )
     }
 
@@ -79,6 +78,7 @@ object TerminalConfig {
             "-b", "/proc",
             "-b", "/sys",
             "-b", "/data/data/${context.packageName}:/data_priv", // Montaje del directorio privado
+            "-E", "LD_PRELOAD=/data_priv/lib/libtermux_exec.so", // Bypass W^X solo dentro del guest
             "-w", "/home/programador",
             shellCmd
         )
