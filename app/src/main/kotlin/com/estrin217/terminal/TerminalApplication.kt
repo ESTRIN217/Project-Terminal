@@ -41,6 +41,7 @@ class TerminalApplication : Application() {
         sessionId = UUID.randomUUID().toString().take(8)
 
         DiagnosticPipeline.setSessionId(sessionId)
+        DebugLogger.setSessionId(sessionId)
         DebugLogger.initCrashHandler(this)
         DebugLogger.i("TerminalApplication", "App started. Session: $sessionId")
 

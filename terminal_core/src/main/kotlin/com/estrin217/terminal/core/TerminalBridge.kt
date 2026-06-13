@@ -58,6 +58,12 @@ open class TerminalBridge(
         val exitStatus = finishedSession.exitStatus
         val isRunning = finishedSession.isRunning
         DebugLogger.i("TerminalBridge", "Session finished: ${finishedSession.title}. isRunning=$isRunning, exitStatus=$exitStatus")
+        com.estrin217.terminal.core.logger.DiagnosticPipeline.postLog(
+            component = com.estrin217.terminal.core.logger.SystemComponent.PROOT_CORE,
+            severity = if (exitStatus == 0) com.estrin217.terminal.core.logger.LogSeverity.INFO
+                       else com.estrin217.terminal.core.logger.LogSeverity.ERROR,
+            message = { "Session finished: title=${finishedSession.title}, isRunning=$isRunning, exitStatus=$exitStatus, pid=$shellPid" }
+        )
     }
 
     override fun onCopyTextToClipboard(session: TerminalSession, text: String) {

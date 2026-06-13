@@ -39,21 +39,31 @@ Objetivos y Prioridades
     * TerminalService.onCreate() despliega la lib antes de crear sesiones.
 
   - [FIX] Conflicto LD_PRELOAD + PRoot (exit 255):
-    * Problema: libtermux_exec.so hookea execve() y reescribe argv para usar
-      /system/bin/linker64. PRoot intercepta ese execve vía ptrace y traduce
-      /system/bin/linker64 → <rootfs>/system/bin/linker64, que no existe en
-      Debian. PRoot termina con exit code 255.
-    * Solución actual: Se eliminó LD_PRELOAD del entorno en
-      TerminalConfig.getEnvironmentVariables() para que el terminal arranque.
-    * Recomendación futura (P1 alto): Reactivar LD_PRELOAD correctamente
-      mediante una de estas opciones:
-      a) Añadir bind mount de /system/bin/linker64 en PRoot args:
-         "-b", "/system/bin/linker64"  (o "-b /system" completo)
-      b) Modificar termux_exec.cpp para detectar PRoot y no hookear execve
-         durante la inicialización del tracee.
-      c) Cargar LD_PRELOAD desde un script de perfil (~/.bashrc, /etc/profile)
-         en lugar del entorno inicial del proceso.
-      d) Usar /etc/ld.so.preload dentro del rootfs en lugar de LD_PRELOAD.
+    * Problema ORIGINAL: Se asumió que libtermux_exec.so hookeaba execve()
+      y rompía PRoot. Pero el exit code 255 persiste incluso sin LD_PRELOAD.
+    * Causa real (pendiente de confirmar con logs nativos):
+      El exit code 255 puede originarse en termux.cpp línea ~81:
+        int pts = open(devname, O_RDWR);
+        if (pts < 0) exit(-1);  // exit(-1) → WEXITSTATUS=255
+      Si el slave PTY no puede abrirse (SELinux, permisos, /dev/pts no montado),
+      el proceso hijo termina con exit(-1)=255 antes siquiera de ejecutar PRoot.
+    * Solución aplicada en esta ronda:
+      - Se añadió logging nativo vía __android_log_print en termux.cpp para
+        distinguir entre fallo de PTY slave (exit -1) y fallo de PRoot.
+      - PROOT_TMP_DIR corregido a "/tmp" (guest-relative) en lugar del path host.
+      - Se añadió logging detallado en TerminalSession.initializeEmulator()
+        para registrar args/env exactos.
+      - DebugLogger ahora auto-adjunta sessionId y pid a todos los logs.
+      - DiagnosticPipeline.postLog() integrado en session lifecycle.
+    * Pendiente: Revisar logs nativos tras aplicar estos cambios para
+      determinar la causa raíz exacta. Posibles causas:
+      a) open(devname) falla → SELinux o /dev/pts no accesible.
+      b) PRoot falla con 255 por PROOT_TMP_DIR o seccomp.
+      c) /bin/sh no existe o no es ejecutable en el rootfs descargado.
+    * Recomendación LD_PRELOAD (postergada hasta resolver exit 255):
+      a) Añadir bind mount de /system/bin/linker64 en PRoot args.
+      b) Modificar termux_exec.cpp para detectar PRoot.
+      c) Cargar LD_PRELOAD desde perfil de shell.
 
 [P1] Soportes de PRoot y librerías nativas completas
   - Estado: Completado (scripts de compilación + configuración multi-ABI)
@@ -71,16 +81,32 @@ Objetivos y Prioridades
     * libbsdtar: RootfsDecompressor ya lo referencia con fallback Java.
 
 [P2] Inicialización del pipeline de diagnóstico (DiagnosticPipeline)
-  - Estado: Implementado (clases base, sinks, integración con DebugLogger)
-  - Descripción: Activar y registrar los sinks del pipeline de logging
-    asíncrono en los puntos de entrada de la aplicación. Integrar el
-    pipeline con la UI de logs existente para visualización en tiempo real.
+  - Estado: Completado
+  - Descripción: Sistema de logging asíncrono multicanal (Logcat, archivo,
+    DebugLogger en memoria) plenamente integrado. Metadata de contexto
+    (sesión, PID) auto-adjunta a todos los logs. Logging nativo mejorado
+    con __android_log_print para depurar fallos de PTY/subprocess.
   - Tareas:
     1. Registrar LogcatSink, DiskSink y DebugLoggerSink en Application.onCreate().
     2. Integrar DiagnosticPipeline con la pantalla LoggerScreen.
+       * LoggerScreen ya muestra logs de DebugLogger, que recibe entradas
+         del DebugLoggerSink del pipeline.
+       * LogEntry ahora incluye component, sessionId, pid visibles en UI.
     3. Agregar metadata de contexto (componente, sesión, PID) a los logs.
-    4. Implementar rotación de archivos de log en DiskSink.
-    5. hacer que la app guarde un archivo log en el almacenamiento compartido
+       * DebugLogger.setSessionId() adjunta sessionId a toda entrada.
+       * pid auto-detected via android.os.Process.myPid().
+       * DiagnosticPipeline.postLog() enriquece metadata con session+pid.
+    4. Implementar rotación de archivos de log en DiskSink. (5MB, 3 rotados)
+    5. Guardar archivo log en almacenamiento compartido.
+       * TerminalApplication.exportCombinedLogToShared() exporta a Downloads.
+  - Logros:
+    * DebugLogger: LogEntry ahora incluye component, sessionId, pid.
+    * addDiagnosticLog() mapea DiagnosticLog→LogEntry con metadata.
+    * TerminalSession.initializeEmulator() loguea args/env completos.
+    * termux.cpp: logging nativo (LOGD/LOGI/LOGE) en todos los puntos
+      críticos: apertura PTY slave, execvp, waitFor.
+    * TerminalBridge.onSessionFinished() usa DiagnosticPipeline.postLog().
+    * DiagnosticPipeline ya tenía LogcatSink + DiskSink + DebugLoggerSink.
 
 [P2] TerminalSurfaceState como envoltura Compose oficial
   - Estado: Completado

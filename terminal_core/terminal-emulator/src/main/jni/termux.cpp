@@ -1,3 +1,4 @@
+#include <android/log.h>
 #include <dirent.h>
 #include <fcntl.h>
 #include <jni.h>
@@ -15,8 +16,14 @@
 # define LACKS_PTSNAME_R
 #endif
 
+#define LOG_TAG "TermuxJNI"
+#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+
 static int throw_runtime_exception(JNIEnv* env, char const* message)
 {
+    LOGE("throwRuntimeException: %s", message);
     jclass exClass = env->FindClass("java/lang/RuntimeException");
     env->ThrowNew(exClass, message);
     return -1;
@@ -69,6 +76,8 @@ static int create_subprocess(JNIEnv* env,
         *pProcessId = (int) pid;
         return ptm;
     } else {
+        LOGI("Child process started, pid=%d, devname=%s", getpid(), devname);
+
         // Clear signals which the Android java process may have blocked:
         sigset_t signals_to_unblock;
         sigfillset(&signals_to_unblock);
@@ -77,8 +86,13 @@ static int create_subprocess(JNIEnv* env,
         close(ptm);
         setsid();
 
+        LOGD("Opening slave PTY: %s", devname);
         int pts = open(devname, O_RDWR);
-        if (pts < 0) exit(-1);
+        if (pts < 0) {
+            LOGE("Failed to open slave PTY '%s': errno=%d (%s)", devname, errno, strerror(errno));
+            exit(-1);
+        }
+        LOGI("Slave PTY opened successfully: pts=%d", pts);
 
         dup2(pts, 0);
         dup2(pts, 1);
@@ -105,8 +119,12 @@ static int create_subprocess(JNIEnv* env,
             perror(error_message);
             fflush(stderr);
         }
+
+        LOGI("Executing: cmd=%s, argv[0]=%s, argv[1]=%s", cmd, argv ? argv[0] : "NULL", argv && argv[1] ? argv[1] : "NULL");
         execvp(cmd, argv);
+
         // Show terminal output about failing exec() call:
+        LOGE("execvp failed for cmd=%s: errno=%d (%s)", cmd, errno, strerror(errno));
         char* error_message;
         if (asprintf(&error_message, "exec(\"%s\")", cmd) == -1) error_message = const_cast<char*>("exec()");
         perror(error_message);
@@ -162,7 +180,13 @@ JNIEXPORT jint JNICALL Java_com_termux_terminal_JNI_createSubprocess(
     int procId = 0;
     char const* cmd_cwd = env->GetStringUTFChars(cwd, nullptr);
     char const* cmd_utf8 = env->GetStringUTFChars(cmd, nullptr);
+
+    LOGI("JNI_createSubprocess: cmd=%s, cwd=%s, argc=%d, envc=%d, rows=%d, cols=%d",
+         cmd_utf8, cmd_cwd, size, envVars ? env->GetArrayLength(envVars) : 0, rows, columns);
+    if (argv && argv[0] && argv[1]) LOGI("  argv[0]=%s, argv[1]=%s", argv[0], argv[1]);
+
     int ptm = create_subprocess(env, cmd_utf8, cmd_cwd, argv, envp, &procId, rows, columns, cell_width, cell_height);
+    LOGI("JNI_createSubprocess result: ptm=%d, procId=%d", ptm, procId);
     env->ReleaseStringUTFChars(cmd, cmd_utf8);
     env->ReleaseStringUTFChars(cwd, cmd_cwd);
 
@@ -205,11 +229,15 @@ JNIEXPORT jint JNICALL Java_com_termux_terminal_JNI_waitFor(JNIEnv* TERMUX_UNUSE
     int status;
     waitpid(pid, &status, 0);
     if (WIFEXITED(status)) {
-        return WEXITSTATUS(status);
+        int exit_code = WEXITSTATUS(status);
+        LOGI("waitFor(pid=%d) exited with code=%d", pid, exit_code);
+        return exit_code;
     } else if (WIFSIGNALED(status)) {
-        return -WTERMSIG(status);
+        int signal = WTERMSIG(status);
+        LOGI("waitFor(pid=%d) killed by signal=%d (%s)", pid, signal, strsignal(signal));
+        return -signal;
     } else {
-        // Should never happen - waitpid(2) says "One of the first three macros will evaluate to a non-zero (true) value".
+        LOGE("waitFor(pid=%d) unexpected status=0x%x", pid, status);
         return 0;
     }
 }

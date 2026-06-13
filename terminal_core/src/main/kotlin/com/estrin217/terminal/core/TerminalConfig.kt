@@ -45,10 +45,6 @@ object TerminalConfig {
     }
 
     fun getEnvironmentVariables(context: Context): Array<String> {
-        val rootfsPath = getRootfsDir(context).absolutePath
-        val homePath = "$rootfsPath/home/programador"
-        val tmpPath = "$rootfsPath/tmp"
-
         return arrayOf(
             "TERM=xterm-256color",
             "HOME=/home/programador",
@@ -56,7 +52,7 @@ object TerminalConfig {
             "USER=programador",
             "LOGNAME=programador",
             "LANG=es_VE.UTF-8",
-            "PROOT_TMP_DIR=$tmpPath",
+            "PROOT_TMP_DIR=/tmp",
             "PROOT_NO_SECCOMP=1",
         )
     }

@@ -74,6 +74,10 @@ class TerminalService : Service() {
         val args = TerminalConfig.getPRootArgs(context, "/bin/sh")
         val env = TerminalConfig.getEnvironmentVariables(context)
 
+        DebugLogger.i("TerminalService", "Creating session: shellPath=$shellPath, cwd=$cwd")
+        args.forEachIndexed { i, arg -> DebugLogger.d("TerminalService", "  args[$i]=\"$arg\"") }
+        env.forEach { e -> DebugLogger.d("TerminalService", "  env: $e") }
+
         val session = TerminalSession(
             shellPath,
             cwd,
@@ -84,6 +88,7 @@ class TerminalService : Service() {
         )
 
         currentSession = session
+        DebugLogger.i("TerminalService", "Session created: handle=${session.mHandle}")
         return session
     }
 

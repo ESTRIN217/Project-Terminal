@@ -27,6 +27,14 @@ object DebugLogger {
     @Volatile
     var verbose: Boolean = false
 
+    private var _sessionId: String = "unknown"
+    private var _pid: String = android.os.Process.myPid().toString()
+
+    fun setSessionId(id: String) { _sessionId = id }
+
+    val sessionId: String get() = _sessionId
+    val pid: String get() = _pid
+
     data class LogEntry(
     val timestamp: String,
     val level: LogLevel,
@@ -95,7 +103,8 @@ object DebugLogger {
         val finalTag = if (customTag.isEmpty()) autoTag else "$customTag -> $autoTag"
         val threadName = Thread.currentThread().name
 
-        logs.add(LogEntry(timestamp, level, finalTag, threadName, message))
+        logs.add(LogEntry(timestamp, level, finalTag, threadName, message,
+            component = null, sessionId = _sessionId, pid = _pid))
 
         if (logs.size > maxLogs) {
             logs.removeAt(0)
