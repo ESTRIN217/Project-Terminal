@@ -150,7 +150,8 @@ object RootfsManager {
                         path.contains("sbin/") ||
                         path.contains("libexec/") ||
                         path.endsWith(".sh") ||
-                        path.endsWith(".so") 
+                        path.endsWith(".so") ||
+                        path.contains(".so.") // Captura .so.1, .so.6, etc. (loaders, libc)
                         
                 if (isExecutable) {
                     destFile.setExecutable(true, false) 
@@ -166,8 +167,45 @@ object RootfsManager {
         tarIn.close()
     }
     /**
-    * Importa un archivo rootfs externo desde un InputStream (por ejemplo, desde el almacenamiento local).
-    */
+     * Fix para rootfs existente: asigna permisos de ejecución a todos los .so y .so.*
+     * (loaders como ld-linux-aarch64.so.1, libc.so.6, etc.).
+     * Se invoca automáticamente si el marcador de fix-permisos no existe.
+     */
+    private const val PERMS_MARKER = ".perms_fixed"
+
+    fun ensureLoaderPermissions(context: Context) {
+        val rootfsDir = TerminalConfig.getRootfsDir(context)
+        val permsMarker = File(rootfsDir, PERMS_MARKER)
+        if (permsMarker.exists()) return
+
+        com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Fixing loader/library permissions in rootfs")
+        val fixed = fixLoaderPermissions(rootfsDir)
+        if (fixed > 0) {
+            com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Fixed $fixed files with execute permissions")
+        }
+        permsMarker.createNewFile()
+    }
+
+    private fun fixLoaderPermissions(rootfsDir: File): Int {
+        var count = 0
+        rootfsDir.walkTopDown().forEach { file ->
+            if (file.isFile) {
+                val name = file.name
+                if (name.endsWith(".so") || name.contains(".so.")) {
+                    if (!file.canExecute()) {
+                        file.setExecutable(true, false)
+                        file.setReadable(true, false)
+                        count++
+                    }
+                }
+            }
+        }
+        return count
+    }
+
+    /**
+     * Importa un archivo rootfs externo desde un InputStream (por ejemplo, desde el almacenamiento local).
+     */
     @Throws(IOException::class)
     fun importCustomRootfs(context: Context, inputStream: InputStream, progressCallback: (Int) -> Unit = {}) {
     val rootfsDir = TerminalConfig.getRootfsDir(context)

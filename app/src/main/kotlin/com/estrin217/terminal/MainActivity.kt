@@ -152,6 +152,7 @@ class MainActivity : ComponentActivity() {
         DebugLogger.i(TAG, "Checking rootfs installation status")
         if (RootfsManager.isInstalled(this)) {
             DebugLogger.i(TAG, "Rootfs is already installed")
+            RootfsManager.ensureLoaderPermissions(this)
             startAndBindService()
         } else {
             DebugLogger.i(TAG, "Rootfs is not installed. Initiating installation sequence...")
