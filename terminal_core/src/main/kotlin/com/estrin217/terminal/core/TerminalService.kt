@@ -15,6 +15,7 @@ import android.net.wifi.WifiManager.WifiLock
 import androidx.core.app.NotificationCompat
 import com.estrin217.terminal.core.logger.DebugLogger
 import com.termux.terminal.TerminalSession
+import java.io.File
 
 class TerminalService : Service() {
 
@@ -68,6 +69,12 @@ class TerminalService : Service() {
 
     fun createOrGetSession(context: Context, bridge: TerminalBridge): TerminalSession {
         currentSession?.let { return it }
+
+        val rootfsTmp = File(TerminalConfig.getRootfsDir(context), "tmp")
+        if (!rootfsTmp.exists()) {
+            rootfsTmp.mkdirs()
+            DebugLogger.w("TerminalService", "PROOT_TMP_DIR did not exist, created: ${rootfsTmp.absolutePath}")
+        }
 
         val shellPath = TerminalConfig.getPRootExecutable(context).absolutePath
         val cwd = context.filesDir.absolutePath
