@@ -191,12 +191,19 @@ object RootfsManager {
         rootfsDir.walkTopDown().forEach { file ->
             if (file.isFile) {
                 val name = file.name
-                if (name.endsWith(".so") || name.contains(".so.")) {
-                    if (!file.canExecute()) {
-                        file.setExecutable(true, false)
-                        file.setReadable(true, false)
-                        count++
-                    }
+                val path = file.relativeTo(rootfsDir).path
+                val needsExec = name.endsWith(".so") ||
+                        name.contains(".so.") ||
+                        path.startsWith("bin/") ||
+                        path.startsWith("sbin/") ||
+                        path.startsWith("usr/bin/") ||
+                        path.startsWith("usr/sbin/") ||
+                        path.startsWith("usr/libexec/") ||
+                        name.endsWith(".sh")
+                if (needsExec && !file.canExecute()) {
+                    file.setExecutable(true, false)
+                    file.setReadable(true, false)
+                    count++
                 }
             }
         }

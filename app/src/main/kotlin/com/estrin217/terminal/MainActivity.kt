@@ -167,6 +167,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     DebugLogger.i(TAG, "Rootfs extraction completed successfully")
+                    RootfsManager.ensureLoaderPermissions(this@MainActivity)
                     runOnUiThread {
                         isInstallingState.value = false
                         startAndBindService()
