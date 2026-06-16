@@ -9,6 +9,16 @@
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
+// libarchive constants (loaded via dlopen, so no archive.h available at compile time)
+#define ARCHIVE_OK 0
+#define ARCHIVE_EOF 1
+
+#define ARCHIVE_EXTRACT_PERM            0x0002
+#define ARCHIVE_EXTRACT_TIME            0x0004
+#define ARCHIVE_EXTRACT_SECURE_SYMLINKS 0x0100
+#define ARCHIVE_EXTRACT_SECURE_NODOTDOT 0x0200
+#define ARCHIVE_EXTRACT_UNLINK          0x0010
+
 typedef struct archive archive;
 typedef struct archive_entry archive_entry;
 
