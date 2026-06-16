@@ -129,11 +129,26 @@ build_bsdtar() {
             -DCMAKE_INSTALL_PREFIX="$install_dir" \
             -DCMAKE_BUILD_TYPE=Release
 
-        cmake --build . --target bsdtar -- -j"$JOBS"
+        cmake --build . --target bsdtar archive -- -j"$JOBS"
 
         if [ -f "bin/bsdtar" ]; then
             cp "bin/bsdtar" "$install_dir/bsdtar"
             log "bsdtar binary copied to $install_dir/bsdtar"
+        fi
+
+        # libarchive.so shared library for JNI extraction via archive_read_open_fd
+        local archive_so=""
+        for p in "libarchive.so" "bin/libarchive.so" "lib/libarchive.so"; do
+            if [ -f "$p" ]; then
+                archive_so="$p"
+                break
+            fi
+        done
+        if [ -n "$archive_so" ]; then
+            cp "$archive_so" "$install_dir/libarchive.so"
+            log "libarchive.so copied to $install_dir/libarchive.so"
+        else
+            log "WARNING: libarchive.so not found in build output"
         fi
 
         popd >/dev/null
@@ -314,6 +329,12 @@ deploy() {
         elif [ -f "$OUTPUT_DIR/bsdtar/$abi/libbsdtar.so" ]; then
             cp "$OUTPUT_DIR/bsdtar/$abi/libbsdtar.so" "$target_dir/libbsdtar.so"
             log "  -> $abi/libbsdtar.so"
+        fi
+
+        # libarchive.so (shared library for JNI extraction)
+        if [ -f "$OUTPUT_DIR/bsdtar/$abi/libarchive.so" ]; then
+            cp "$OUTPUT_DIR/bsdtar/$abi/libarchive.so" "$target_dir/libarchive.so"
+            log "  -> $abi/libarchive.so"
         fi
 
         # libproot32.so (armeabi-v7a only)

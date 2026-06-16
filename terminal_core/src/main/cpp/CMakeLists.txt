@@ -5,6 +5,7 @@ add_library(
     terminal_core
     SHARED
     terminal_jni.cpp
+    extract_jni.cpp
 )
 
 add_library(
@@ -18,9 +19,15 @@ find_library(
     log
 )
 
+find_library(
+    dl-lib
+    dl
+)
+
 target_link_libraries(
     terminal_core
     ${log-lib}
+    ${dl-lib}
 )
 
 target_link_libraries(

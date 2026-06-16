@@ -1,12 +1,29 @@
 package com.estrin217.terminal.core
 
 import android.content.Context
+import android.os.ParcelFileDescriptor
 import com.estrin217.terminal.core.logger.DebugLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
 object RootfsDecompressor {
+
+    private var nativeLoaded = false
+
+    private fun ensureNativeLoaded() {
+        if (!nativeLoaded) {
+            try {
+                System.loadLibrary("terminal_core")
+                nativeLoaded = true
+                DebugLogger.i("RootfsDecompressor", "terminal_core native library loaded")
+            } catch (e: UnsatisfiedLinkError) {
+                DebugLogger.w("RootfsDecompressor", "terminal_core not available: ${e.message}")
+            }
+        }
+    }
+
+    private external fun nativeExtractTar(fd: Int, destDir: String): Boolean
 
     suspend fun extractDebianRootfs(
         context: Context,
@@ -15,35 +32,26 @@ object RootfsDecompressor {
     ): Boolean = withContext(Dispatchers.IO) {
         if (!destinationDir.exists()) destinationDir.mkdirs()
 
-        val nativeLibraryDir = context.applicationInfo.nativeLibraryDir
-        val bsdtarBinary = File(nativeLibraryDir, "libbsdtar.so").absolutePath
-
-        if (!File(bsdtarBinary).exists()) {
-            DebugLogger.w("RootfsDecompressor", "libbsdtar.so not found at $bsdtarBinary, falling back to Java extraction")
+        ensureNativeLoaded()
+        if (!nativeLoaded) {
+            DebugLogger.w("RootfsDecompressor", "Native library not loaded, falling back to Java extraction")
             return@withContext false
         }
 
-        val command = arrayOf(
-            bsdtarBinary,
-            "-x",
-            "-f", tarballSource.absolutePath,
-            "-C", destinationDir.absolutePath,
-            "--no-same-owner"
-        )
-
         try {
-            DebugLogger.i("RootfsDecompressor", "Extracting with bsdtar: ${command.joinToString(" ")}")
-            val process = Runtime.getRuntime().exec(command)
-            val exitCode = process.waitFor()
-            if (exitCode == 0) {
-                DebugLogger.i("RootfsDecompressor", "bsdtar extraction completed successfully")
-                true
+            val pfd = ParcelFileDescriptor.open(tarballSource, ParcelFileDescriptor.MODE_READ_ONLY)
+            val fd = pfd.fd
+            DebugLogger.i("RootfsDecompressor", "Extracting via native JNI with fd=$fd to ${destinationDir.absolutePath}")
+            val success = nativeExtractTar(fd, destinationDir.absolutePath)
+            pfd.close()
+            if (success) {
+                DebugLogger.i("RootfsDecompressor", "Native extraction completed successfully")
             } else {
-                DebugLogger.e("RootfsDecompressor", "bsdtar extraction failed with exit code $exitCode")
-                false
+                DebugLogger.e("RootfsDecompressor", "Native extraction returned false")
             }
+            success
         } catch (e: Exception) {
-            DebugLogger.e("RootfsDecompressor", "bsdtar extraction threw exception", e)
+            DebugLogger.e("RootfsDecompressor", "Native extraction threw exception", e)
             false
         }
     }

@@ -150,6 +150,15 @@ class MainActivity : ComponentActivity() {
 
     private fun checkAndInstallRootfs() {
         DebugLogger.i(TAG, "Checking rootfs installation status")
+        val rootfsDir = TerminalConfig.getRootfsDir(this)
+        val shellFile = File(rootfsDir, "bin/sh")
+
+        // Sanity check: si el marcador existe pero el binario principal no, reinstalar
+        if (RootfsManager.isInstalled(this) && !shellFile.exists()) {
+            DebugLogger.w(TAG, "Corrupted installation detected: marker present but $shellFile missing. Forcing reinstall...")
+            rootfsDir.deleteRecursively()
+        }
+
         if (RootfsManager.isInstalled(this)) {
             DebugLogger.i(TAG, "Rootfs is already installed")
             RootfsManager.ensureLoaderPermissions(this)
