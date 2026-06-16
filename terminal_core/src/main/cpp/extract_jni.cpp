@@ -4,6 +4,7 @@
 #include <cstring>
 #include <climits>
 #include <cstdlib>
+#include <cerrno>
 
 #define LOG_TAG "ExtractJNI"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -41,7 +42,7 @@ Java_com_estrin217_terminal_core_RootfsDecompressor_nativeExtractTar(
         handle = dlopen("libbsdtar.so", RTLD_LAZY | RTLD_LOCAL);
     }
     if (handle == nullptr) {
-        LOGE("dlopen failed for libarchive.so and libbsdtar.so: %s", dlerror());
+        LOGE("dlopen failed for libarchive.so and libbsdtar.so: %s (errno=%d: %s)", dlerror(), errno, strerror(errno));
         env->ReleaseStringUTFChars(dest_dir_str, dest_dir);
         return JNI_FALSE;
     }
@@ -78,7 +79,7 @@ Java_com_estrin217_terminal_core_RootfsDecompressor_nativeExtractTar(
         !archive_write_disk_set_options || !archive_write_header ||
         !archive_write_data || !archive_write_finish_entry ||
         !archive_write_close || !archive_write_free) {
-        LOGE("dlsym failed to resolve one or more libarchive symbols");
+        LOGE("dlsym failed to resolve one or more libarchive symbols (errno=%d: %s)", errno, strerror(errno));
         dlclose(handle);
         env->ReleaseStringUTFChars(dest_dir_str, dest_dir);
         return JNI_FALSE;
@@ -99,7 +100,7 @@ Java_com_estrin217_terminal_core_RootfsDecompressor_nativeExtractTar(
 
     int r = archive_read_open_fd(a, fd, 10240);
     if (r != ARCHIVE_OK) {
-        LOGE("archive_read_open_fd failed: %s", archive_error_string(a));
+        LOGE("archive_read_open_fd(fd=%d) failed: %s (errno=%d: %s)", fd, archive_error_string(a), errno, strerror(errno));
         archive_read_close(a);
         archive_read_free(a);
         archive_write_close(ext);

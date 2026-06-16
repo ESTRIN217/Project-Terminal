@@ -122,6 +122,8 @@ build_bsdtar() {
             -DENABLE_ZSTD=OFF \
             -DENABLE_ICONV=OFF \
             -DENABLE_LIBB2=OFF \
+            -DENABLE_SHARED=ON \
+            -DENABLE_STATIC=OFF \
             -DENABLE_LZMA=ON \
             -DENABLE_ZLIB=ON \
             -DENABLE_OPENSSL=OFF \
@@ -131,25 +133,50 @@ build_bsdtar() {
 
         cmake --build . --target bsdtar archive -- -j"$JOBS"
 
-        if [ -f "bin/bsdtar" ]; then
-            cp "bin/bsdtar" "$install_dir/bsdtar"
-            log "bsdtar binary copied to $install_dir/bsdtar"
-        fi
-
-        # libarchive.so shared library for JNI extraction via archive_read_open_fd
-        local archive_so=""
-        for p in "libarchive.so" "bin/libarchive.so" "lib/libarchive.so"; do
-            if [ -f "$p" ]; then
-                archive_so="$p"
-                break
+        # Install via cmake para obtener bsdtar y libarchive.so en install_dir
+        cmake --install . --prefix "$install_dir" 2>/dev/null || {
+            log "cmake --install failed, falling back to manual copy"
+            if [ -f "bin/bsdtar" ]; then
+                cp "bin/bsdtar" "$install_dir/bsdtar"
+                log "bsdtar binary copied to $install_dir/bsdtar"
             fi
-        done
-        if [ -n "$archive_so" ]; then
-            cp "$archive_so" "$install_dir/libarchive.so"
-            log "libarchive.so copied to $install_dir/libarchive.so"
-        else
-            log "WARNING: libarchive.so not found in build output"
-        fi
+
+            # libarchive.so shared library for JNI extraction via archive_read_open_fd
+            local archive_so=""
+            for p in \
+                "libarchive.so" \
+                "bin/libarchive.so" \
+                "lib/libarchive.so" \
+                "libarchive/libarchive.so" \
+                "src/.libs/libarchive.so" \
+                "libarchive.so.19"; do
+                if [ -f "$p" ]; then
+                    archive_so="$p"
+                    break
+                fi
+            done
+            # Si no se encontró con nombre exacto, buscar recursivamente
+            if [ -z "$archive_so" ]; then
+                local found
+                found=$(find "$build_abi" -name "libarchive.so*" -type f 2>/dev/null | head -1)
+                if [ -n "$found" ]; then
+                    if [[ "$found" == *.so.* ]]; then
+                        local base="${found%.so*}"
+                        ln -sf "$found" "${base}.so" 2>/dev/null || true
+                        archive_so="${base}.so"
+                    else
+                        archive_so="$found"
+                    fi
+                fi
+            fi
+            if [ -n "$archive_so" ]; then
+                cp "$archive_so" "$install_dir/libarchive.so"
+                log "libarchive.so manually copied to $install_dir/libarchive.so"
+            else
+                log "WARNING: libarchive.so not found in build output (tried all known paths)"
+                ls -la "$build_abi/" 2>/dev/null | head -20 || true
+            fi
+        }
 
         popd >/dev/null
     done

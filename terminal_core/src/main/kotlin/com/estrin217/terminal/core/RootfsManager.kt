@@ -1,6 +1,7 @@
 package com.estrin217.terminal.core
 
 import android.content.Context
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import java.io.BufferedInputStream
@@ -162,19 +163,8 @@ object RootfsManager {
                     tarIn.copyTo(outputStream) 
                 }
 
-                // Asignación automática de permisos de lectura y ejecución para binarios y scripts del sistema
-                val path = entry.name
-                val isExecutable = path.contains("bin/") ||
-                        path.contains("sbin/") ||
-                        path.contains("libexec/") ||
-                        path.endsWith(".sh") ||
-                        path.endsWith(".so") ||
-                        path.contains(".so.") // Captura .so.1, .so.6, etc. (loaders, libc)
-                        
-                if (isExecutable) {
-                    destFile.setExecutable(true, false) 
-                    destFile.setReadable(true, false) 
-                }
+                // Restaurar permisos POSIX reales desde el modo del entry en el tar
+                destFile.restorePermissionsFromMode(entry.mode)
             }
 
             entryCount++
@@ -184,6 +174,17 @@ object RootfsManager {
 
         tarIn.close()
     }
+    private fun File.restorePermissionsFromMode(mode: Int) {
+        val executable = (mode and 0b001001001) != 0
+        if (executable) {
+            this.setExecutable(true, false)
+        }
+        val readable = (mode and 0b100100100) != 0
+        if (readable) {
+            this.setReadable(true, false)
+        }
+    }
+
     /**
      * Fix para rootfs existente: asigna permisos de ejecución a todos los .so y .so.*
      * (loaders como ld-linux-aarch64.so.1, libc.so.6, etc.).
@@ -214,6 +215,8 @@ object RootfsManager {
                         name.contains(".so.") ||
                         path.startsWith("bin/") ||
                         path.startsWith("sbin/") ||
+                        path.startsWith("lib/") ||
+                        path.startsWith("lib64/") ||
                         path.startsWith("usr/bin/") ||
                         path.startsWith("usr/sbin/") ||
                         path.startsWith("usr/libexec/") ||
@@ -251,6 +254,23 @@ object RootfsManager {
             if (binFile.exists()) {
                 binFile.setExecutable(true, false)
                 binFile.setReadable(true, false)
+            }
+        }
+
+        // Buscar y reparar linkers dinámicos (ld-linux-*, ld.so.*) en todo el rootfs
+        rootfsDir.walkTopDown().forEach { file ->
+            if (file.isFile) {
+                val name = file.name
+                if (name.startsWith("ld-linux") || name.startsWith("ld.so")) {
+                    if (!file.canExecute()) {
+                        file.setExecutable(true, false)
+                        file.setReadable(true, false)
+                        com.estrin217.terminal.core.logger.DebugLogger.i(
+                            "RootfsManager",
+                            "Fixed linker permissions: ${file.relativeTo(rootfsDir).path}"
+                        )
+                    }
+                }
             }
         }
     }
@@ -297,6 +317,43 @@ object RootfsManager {
             }
         }
         return null
+    }
+
+    fun forceReinstall(context: Context) {
+        val rootfsDir = TerminalConfig.getRootfsDir(context)
+        val marker = TerminalConfig.getMarkerFile(context)
+        if (marker.exists()) {
+            marker.delete()
+            com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Deleted .installed marker to force reinstall")
+        }
+        val permsMarker = File(rootfsDir, PERMS_MARKER)
+        if (permsMarker.exists()) {
+            permsMarker.delete()
+            com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Deleted .perms_fixed marker")
+        }
+    }
+
+    fun diagnosePermissions(context: Context) {
+        val rootfsDir = TerminalConfig.getRootfsDir(context)
+        val criticalPaths = listOf(
+            "bin/sh", "bin/bash",
+            "usr/bin/sh", "usr/bin/bash",
+            "lib/ld-linux-aarch64.so.1",
+            "lib/ld-linux-armhf.so.3",
+            "lib/ld-linux-x86-64.so.2",
+            "lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
+            "lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+            "lib64/ld-linux-x86-64.so.2"
+        )
+        criticalPaths.forEach { relPath ->
+            val file = File(rootfsDir, relPath)
+            if (file.exists() || java.nio.file.Files.isSymbolicLink(file.toPath())) {
+                com.estrin217.terminal.core.logger.DebugLogger.d(
+                    "PermissionsDiag",
+                    "$relPath: exists=true isSymlink=${java.nio.file.Files.isSymbolicLink(file.toPath())} canExe=${file.canExecute()} canRead=${file.canRead()}"
+                )
+            }
+        }
     }
 
     /**

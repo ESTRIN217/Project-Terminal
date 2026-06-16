@@ -162,6 +162,7 @@ class MainActivity : ComponentActivity() {
         if (RootfsManager.isInstalled(this)) {
             DebugLogger.i(TAG, "Rootfs is already installed")
             RootfsManager.ensureLoaderPermissions(this)
+            validateRootfsOrThrow(rootfsDir)
             startAndBindService()
         } else {
             DebugLogger.i(TAG, "Rootfs is not installed. Initiating installation sequence...")
@@ -177,6 +178,7 @@ class MainActivity : ComponentActivity() {
                     }
                     DebugLogger.i(TAG, "Rootfs extraction completed successfully")
                     RootfsManager.ensureLoaderPermissions(this@MainActivity)
+                    validateRootfsOrThrow(rootfsDir)
                     runOnUiThread {
                         isInstallingState.value = false
                         startAndBindService()
@@ -207,6 +209,21 @@ class MainActivity : ComponentActivity() {
         val session = service.createOrGetSession(this, bridge)
         state.attachSession(session)
         DebugLogger.i(TAG, "Terminal session successfully attached")
+    }
+
+    private fun validateRootfsOrThrow(rootfsDir: File) {
+        val shellFile = File(rootfsDir, "bin/sh")
+        if (!shellFile.exists()) {
+            throw IOException("Shell binary not found at ${shellFile.absolutePath}")
+        }
+        if (!shellFile.canExecute()) {
+            DebugLogger.w(TAG, "/bin/sh is not executable after permissions fix, forcing...")
+            shellFile.setExecutable(true, false)
+        }
+        if (!shellFile.canExecute()) {
+            throw IOException("Cannot execute /bin/sh after permission fix - PRoot will fail")
+        }
+        DebugLogger.i(TAG, "Rootfs validation passed: /bin/sh is executable")
     }
 
     /** Called from AndroidView factory when bridge becomes available */
