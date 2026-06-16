@@ -81,6 +81,11 @@ object DebugLogger {
         addLog(LogLevel.WARNING, tag, message)
     }
 
+    fun w(tag: String, message: String, exception: Throwable) {
+        val fullMessage = "$message\n${exception.stackTraceToString()}"
+        addLog(LogLevel.WARNING, tag, fullMessage)
+    }
+
     /**
      * Registra un mensaje de error
      */
