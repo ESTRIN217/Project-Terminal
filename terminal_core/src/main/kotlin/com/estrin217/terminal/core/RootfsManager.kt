@@ -56,6 +56,11 @@ object RootfsManager {
             }
             if (!nativeSuccess) {
                 com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Native extraction unavailable, falling back to Java-based extraction")
+                if (rootfsDir.exists()) {
+                    com.estrin217.terminal.core.logger.DebugLogger.w("RootfsManager", "Cleaning up partial extraction from failed native attempt before fallback")
+                    rootfsDir.deleteRecursively()
+                }
+                rootfsDir.mkdirs()
                 java.io.FileInputStream(downloadedBlob).use { inputStream ->
                     extractTarArchive(inputStream, rootfsDir, progressCallback)
                 }
@@ -140,9 +145,9 @@ object RootfsManager {
                 destFile.mkdirs()
             } else if (entry.isSymbolicLink) {
                 destFile.parentFile?.mkdirs()
-                if (destFile.exists()) {
-                    destFile.delete()
-                }
+                try {
+                    java.nio.file.Files.deleteIfExists(destFile.toPath())
+                } catch (_: Exception) {}
                 try {
                     android.system.Os.symlink(entry.linkName, destFile.absolutePath)
                 } catch (e: Exception) {
