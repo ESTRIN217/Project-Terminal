@@ -75,6 +75,9 @@ class TerminalService : Service() {
             rootfsTmp.mkdirs()
             DebugLogger.w("TerminalService", "PROOT_TMP_DIR did not exist, created: ${rootfsTmp.absolutePath}")
         }
+        rootfsTmp.setWritable(true, false)
+        rootfsTmp.setExecutable(true, false)
+        rootfsTmp.setReadable(true, false)
 
         val shellPath = TerminalConfig.getPRootExecutable(context).absolutePath
         val cwd = context.filesDir.absolutePath

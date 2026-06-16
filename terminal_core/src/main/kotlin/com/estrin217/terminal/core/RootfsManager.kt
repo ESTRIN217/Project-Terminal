@@ -62,7 +62,14 @@ object RootfsManager {
         com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Creating fallback directories: /home/programador and /tmp")
         // Asegurar las estructuras de directorios base del entorno integrado
         File(rootfsDir, "home/programador").mkdirs()
-        File(rootfsDir, "tmp").mkdirs()
+        val tmpDir = File(rootfsDir, "tmp")
+        tmpDir.mkdirs()
+        tmpDir.setWritable(true, false)
+        tmpDir.setExecutable(true, false)
+        tmpDir.setReadable(true, false)
+
+        // Forzar permisos de ejecución en binarios críticos antes de marcar como instalado
+        fixRootfsPermissions(rootfsDir)
 
         // Crear el marcador de instalación completada exitosamente
         val marker = TerminalConfig.getMarkerFile(context)
@@ -211,6 +218,77 @@ object RootfsManager {
     }
 
     /**
+     * Fuerza permisos de lectura y ejecución en binarios críticos que PRoot necesita
+     * para arrancar una sesión de shell. También repara enlaces simbólicos rotos
+     * (ej: /bin/sh -> inexistente) recreándolos contra un shell real disponible.
+     */
+    private fun fixRootfsPermissions(rootfsDir: File) {
+        val criticalBinaries = listOf(
+            "bin/sh",
+            "bin/bash",
+            "usr/bin/sh",
+            "usr/bin/bash"
+        )
+
+        criticalBinaries.forEach { relPath ->
+            val binFile = File(rootfsDir, relPath)
+
+            if (!binFile.exists() && java.nio.file.Files.isSymbolicLink(binFile.toPath())) {
+                recreateBrokenSymlink(binFile, rootfsDir)
+            }
+
+            if (binFile.exists()) {
+                binFile.setExecutable(true, false)
+                binFile.setReadable(true, false)
+            }
+        }
+    }
+
+    private fun recreateBrokenSymlink(symlink: File, rootfsDir: File) {
+        val rawTarget = java.nio.file.Files.readSymbolicLink(symlink.toPath())
+        val resolvedTarget = symlink.parentFile?.toPath()?.resolve(rawTarget)?.toFile()
+        if (resolvedTarget != null && !resolvedTarget.exists()) {
+            val realShell = findRealShell(rootfsDir)
+            if (realShell != null) {
+                symlink.delete()
+                try {
+                    android.system.Os.symlink(realShell, symlink.absolutePath)
+                    com.estrin217.terminal.core.logger.DebugLogger.i(
+                        "RootfsManager",
+                        "Recreated broken symlink ${symlink.name} -> $realShell"
+                    )
+                } catch (e: Exception) {
+                    com.estrin217.terminal.core.logger.DebugLogger.w(
+                        "RootfsManager",
+                        "Failed to recreate symlink ${symlink.name} -> $realShell",
+                        e
+                    )
+                }
+            } else {
+                com.estrin217.terminal.core.logger.DebugLogger.w(
+                    "RootfsManager",
+                    "No real shell found to fix broken symlink ${symlink.absolutePath}"
+                )
+            }
+        }
+    }
+
+    private fun findRealShell(rootfsDir: File): String? {
+        val candidates = listOf(
+            "bin/bash", "usr/bin/bash",
+            "bin/dash", "usr/bin/dash",
+            "bin/ash", "usr/bin/ash"
+        )
+        for (relPath in candidates) {
+            val file = File(rootfsDir, relPath)
+            if (file.exists() && file.canExecute()) {
+                return "/$relPath"
+            }
+        }
+        return null
+    }
+
+    /**
      * Importa un archivo rootfs externo desde un InputStream (por ejemplo, desde el almacenamiento local).
      */
     @Throws(IOException::class)
@@ -226,7 +304,13 @@ object RootfsManager {
 
     // Estructuras base obligatorias
     File(rootfsDir, "home/programador").mkdirs()
-    File(rootfsDir, "tmp").mkdirs()
+    val customTmp = File(rootfsDir, "tmp")
+    customTmp.mkdirs()
+    customTmp.setWritable(true, false)
+    customTmp.setExecutable(true, false)
+    customTmp.setReadable(true, false)
+
+    fixRootfsPermissions(rootfsDir)
     
     // Crear el marcador para que la app sepa que está listo
     TerminalConfig.getMarkerFile(context).createNewFile()
