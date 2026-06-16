@@ -49,10 +49,16 @@ object RootfsManager {
 
         com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Rootfs download complete: ${downloadedBlob.absolutePath}. Commencing extraction...")
 
-        // Extracción del tarball descargado
+        // Extracción: intentar bsdtar nativo primero, fallback a Java
         try {
-            java.io.FileInputStream(downloadedBlob).use { inputStream ->
-                extractTarArchive(inputStream, rootfsDir, progressCallback)
+            val nativeSuccess = runBlocking {
+                RootfsDecompressor.extractDebianRootfs(context, downloadedBlob, rootfsDir)
+            }
+            if (!nativeSuccess) {
+                com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Native extraction unavailable, falling back to Java-based extraction")
+                java.io.FileInputStream(downloadedBlob).use { inputStream ->
+                    extractTarArchive(inputStream, rootfsDir, progressCallback)
+                }
             }
         } catch (e: Exception) {
             com.estrin217.terminal.core.logger.DebugLogger.e("RootfsManager", "Error extracting rootfs tar archive", e)
@@ -299,8 +305,23 @@ object RootfsManager {
     }
     rootfsDir.mkdirs()
 
-    // Llamamos internamente a la extracción sin problemas de visibilidad
-    extractTarArchive(inputStream, rootfsDir, progressCallback)
+    // Volcar InputStream a un archivo temporal para intentar extracción nativa
+    val tempFile = File(context.cacheDir, "import_rootfs_${System.currentTimeMillis()}.tar")
+    try {
+        tempFile.outputStream().use { output -> inputStream.copyTo(output) }
+
+        val nativeSuccess = runBlocking {
+            RootfsDecompressor.extractDebianRootfs(context, tempFile, rootfsDir)
+        }
+        if (!nativeSuccess) {
+            com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Native extraction unavailable for custom rootfs, falling back to Java")
+            tempFile.inputStream().use { savedStream ->
+                extractTarArchive(savedStream, rootfsDir, progressCallback)
+            }
+        }
+    } finally {
+        tempFile.delete()
+    }
 
     // Estructuras base obligatorias
     File(rootfsDir, "home/programador").mkdirs()

@@ -143,13 +143,16 @@ Objetivos y Prioridades
     3. Configurar tiempo de espera máximo configurable.
 
 [P3] Extracción nativa de rootfs con bsdtar
-  - Estado: Implementado (RootfsDecompressor, integrado en RootfsManager)
-  - Descripción: Priorizar la extracción mediante libbsdtar.so cuando esté
-    disponible, con fallback automático al método Java (Apache Commons Compress).
-  - Tareas:
-    1. Integrar RootfsDecompressor en el flujo de instalación de RootfsManager.
-    2. Medir la diferencia de rendimiento entre bsdtar nativo y Java.
-    3. Empaquetar libbsdtar.so en jniLibs.
+  - Estado: Completado
+  - Descripción: RootfsManager.install() e importCustomRootfs() intentan
+    extraer mediante libbsdtar.so primero, con fallback automático al método
+    Java (Apache Commons Compress) si el binario nativo no está disponible.
+  - Logros:
+    1. RootfsDecompressor.extractDebianRootfs() integrado en install().
+    2. RootfsDecompressor.extractDebianRootfs() integrado en importCustomRootfs()
+       (vuelca InputStream a archivo temporal para pasar a bsdtar).
+    3. libbsdtar.so precompilado en jniLibs/ para arm64-v8a y x86_64.
+    * Pendiente: Medir diferencia de rendimiento entre bsdtar nativo y Java.
 
 [P3] Manejo de señales SIGSYS (seccomp)
   - Estado: Pendiente (actualmente desactivado vía PROOT_NO_SECCOMP=1)
