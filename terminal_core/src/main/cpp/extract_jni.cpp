@@ -5,6 +5,8 @@
 #include <climits>
 #include <cstdlib>
 #include <cerrno>
+#include <unistd.h>
+#include <sys/stat.h>
 
 #define LOG_TAG "ExtractJNI"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -19,6 +21,9 @@
 #define ARCHIVE_EXTRACT_SECURE_SYMLINKS 0x0100
 #define ARCHIVE_EXTRACT_SECURE_NODOTDOT 0x0200
 #define ARCHIVE_EXTRACT_UNLINK          0x0010
+
+// Symlink file type constant (from libarchive internal)
+#define AE_IFLNK 0120000
 
 typedef struct archive archive;
 typedef struct archive_entry archive_entry;
@@ -60,6 +65,8 @@ Java_com_estrin217_terminal_core_RootfsDecompressor_nativeExtractTar(
     auto archive_read_free = (int (*)(archive*)) dlsym(handle, "archive_read_free");
     auto archive_read_close = (int (*)(archive*)) dlsym(handle, "archive_read_close");
     auto archive_error_string = (const char* (*)(archive*)) dlsym(handle, "archive_error_string");
+    auto archive_entry_filetype = (int (*)(archive_entry*)) dlsym(handle, "archive_entry_filetype");
+    auto archive_entry_symlink = (const char* (*)(archive_entry*)) dlsym(handle, "archive_entry_symlink");
 
     auto archive_write_disk_new = (archive* (*)()) dlsym(handle, "archive_write_disk_new");
     auto archive_write_disk_set_options = (int (*)(archive*, int)) dlsym(handle, "archive_write_disk_set_options");
@@ -75,7 +82,8 @@ Java_com_estrin217_terminal_core_RootfsDecompressor_nativeExtractTar(
         !archive_read_next_header || !archive_entry_pathname ||
         !archive_entry_set_pathname || !archive_entry_size ||
         !archive_read_data || !archive_read_free || !archive_read_close ||
-        !archive_error_string || !archive_write_disk_new ||
+        !archive_error_string || !archive_entry_filetype ||
+        !archive_entry_symlink || !archive_write_disk_new ||
         !archive_write_disk_set_options || !archive_write_header ||
         !archive_write_data || !archive_write_finish_entry ||
         !archive_write_close || !archive_write_free) {
@@ -132,6 +140,41 @@ Java_com_estrin217_terminal_core_RootfsDecompressor_nativeExtractTar(
         }
 
         archive_entry_set_pathname(entry, full_path);
+
+        // Handle symlinks manually to avoid ARCHIVE_EXTRACT_SECURE_SYMLINKS
+        // blocking symlinks whose targets resolve outside dest_dir
+        if (archive_entry_filetype(entry) == AE_IFLNK) {
+            const char* target = archive_entry_symlink(entry);
+            if (target == nullptr) {
+                LOGE("Symlink entry with null target: %s", name);
+                archive_write_finish_entry(ext);
+                continue;
+            }
+
+            // Ensure parent directory exists before creating symlink
+            char parent[PATH_MAX];
+            snprintf(parent, sizeof(parent), "%s", full_path);
+            char* slash = strrchr(parent, '/');
+            if (slash != nullptr) {
+                *slash = '\0';
+                if (mkdir(parent, 0755) != 0 && errno != EEXIST) {
+                    LOGE("mkdir(%s) for symlink parent failed: %s (errno=%d)",
+                         parent, strerror(errno), errno);
+                }
+            }
+
+            unlink(full_path);
+
+            if (symlink(target, full_path) != 0) {
+                LOGE("symlink(%s -> %s) failed: %s (errno=%d)",
+                     target, full_path, strerror(errno), errno);
+            } else {
+                LOGD("Created symlink: %s -> %s", full_path, target);
+            }
+
+            archive_write_finish_entry(ext);
+            continue;
+        }
 
         r = archive_write_header(ext, entry);
         if (r == ARCHIVE_OK) {

@@ -151,11 +151,12 @@ class MainActivity : ComponentActivity() {
     private fun checkAndInstallRootfs() {
         DebugLogger.i(TAG, "Checking rootfs installation status")
         val rootfsDir = TerminalConfig.getRootfsDir(this)
-        val shellFile = File(rootfsDir, "bin/sh")
+        val binSh = File(rootfsDir, "bin/sh")
+        val usrBinSh = File(rootfsDir, "usr/bin/sh")
 
-        // Sanity check: si el marcador existe pero el binario principal no, reinstalar
-        if (RootfsManager.isInstalled(this) && !shellFile.exists()) {
-            DebugLogger.w(TAG, "Corrupted installation detected: marker present but $shellFile missing. Forcing reinstall...")
+        // Sanity check: si el marcador existe pero ningún shell aparece, reinstalar
+        if (RootfsManager.isInstalled(this) && !binSh.exists() && !usrBinSh.exists()) {
+            DebugLogger.w(TAG, "Corrupted installation detected: marker present but no shell found (checked bin/sh and usr/bin/sh). Forcing reinstall...")
             rootfsDir.deleteRecursively()
         }
 
@@ -212,18 +213,26 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun validateRootfsOrThrow(rootfsDir: File) {
-        val shellFile = File(rootfsDir, "bin/sh")
-        if (!shellFile.exists()) {
-            throw IOException("Shell binary not found at ${shellFile.absolutePath}")
+        val binSh = File(rootfsDir, "bin/sh")
+        val usrBinSh = File(rootfsDir, "usr/bin/sh")
+
+        val isShellPresent = binSh.exists() || usrBinSh.exists()
+
+        if (!isShellPresent) {
+            throw IOException("Shell binary not found at expected locations (bin/sh or usr/bin/sh)")
         }
+
+        val shellFile = if (binSh.exists()) binSh else usrBinSh
+        val shellLabel = if (binSh.exists()) "/bin/sh" else "/usr/bin/sh"
+
         if (!shellFile.canExecute()) {
-            DebugLogger.w(TAG, "/bin/sh is not executable after permissions fix, forcing...")
+            DebugLogger.w(TAG, "$shellLabel is not executable after permissions fix, forcing...")
             shellFile.setExecutable(true, false)
         }
         if (!shellFile.canExecute()) {
-            throw IOException("Cannot execute /bin/sh after permission fix - PRoot will fail")
+            throw IOException("Cannot execute $shellLabel after permission fix - PRoot will fail")
         }
-        DebugLogger.i(TAG, "Rootfs validation passed: /bin/sh is executable")
+        DebugLogger.i(TAG, "Rootfs validation passed: $shellLabel is executable")
     }
 
     /** Called from AndroidView factory when bridge becomes available */
