@@ -60,7 +60,8 @@ Java_com_estrin217_terminal_core_RootfsDecompressor_nativeExtractTar(
     auto archive_read_next_header = (int (*)(archive*, archive_entry**)) dlsym(handle, "archive_read_next_header");
     auto archive_entry_pathname = (const char* (*)(archive_entry*)) dlsym(handle, "archive_entry_pathname");
     auto archive_entry_set_pathname = (void (*)(archive_entry*, const char*)) dlsym(handle, "archive_entry_set_pathname");
-    auto archive_entry_size = (int64_t (*)(archive_entry*)) dlsym(handle, "archive_entry_size");
+    auto archive_entry_size_fn = (int64_t (*)(archive_entry*)) dlsym(handle, "archive_entry_size");
+    auto archive_entry_mode_fn = (mode_t (*)(archive_entry*)) dlsym(handle, "archive_entry_mode");
     auto archive_read_data = (ssize_t (*)(archive*, void*, size_t)) dlsym(handle, "archive_read_data");
     auto archive_read_free = (int (*)(archive*)) dlsym(handle, "archive_read_free");
     auto archive_read_close = (int (*)(archive*)) dlsym(handle, "archive_read_close");
@@ -80,8 +81,8 @@ Java_com_estrin217_terminal_core_RootfsDecompressor_nativeExtractTar(
     if (!archive_read_new || !archive_read_support_filter_all ||
         !archive_read_support_format_all || !archive_read_open_fd ||
         !archive_read_next_header || !archive_entry_pathname ||
-        !archive_entry_set_pathname || !archive_entry_size ||
-        !archive_read_data || !archive_read_free || !archive_read_close ||
+        !archive_entry_set_pathname || !archive_entry_size_fn ||
+        !archive_entry_mode_fn || !archive_read_data || !archive_read_free || !archive_read_close ||
         !archive_error_string || !archive_entry_filetype ||
         !archive_entry_symlink || !archive_write_disk_new ||
         !archive_write_disk_set_options || !archive_write_header ||
@@ -178,11 +179,11 @@ Java_com_estrin217_terminal_core_RootfsDecompressor_nativeExtractTar(
 
         r = archive_write_header(ext, entry);
         if (r == ARCHIVE_OK) {
-            mode_t file_mode = archive_entry_mode(entry);
+            mode_t file_mode = archive_entry_mode_fn(entry);
             LOGD("Extracting: %s (mode=0%o, size=%lld)", name, file_mode,
-                 (long long)archive_entry_size(entry));
+                 (long long)archive_entry_size_fn(entry));
 
-            if (archive_entry_size(entry) > 0) {
+            if (archive_entry_size_fn(entry) > 0) {
                 char buff[8192];
                 ssize_t len;
                 while ((len = archive_read_data(a, buff, sizeof(buff))) > 0) {
