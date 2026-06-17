@@ -121,7 +121,9 @@ Java_com_estrin217_terminal_core_RootfsDecompressor_nativeExtractTar(
     archive_entry* entry;
     bool success = true;
 
+    int entry_count = 0;
     while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
+        entry_count++;
         const char* name = archive_entry_pathname(entry);
         if (name == nullptr || name[0] == '\0') continue;
 
@@ -168,16 +170,18 @@ Java_com_estrin217_terminal_core_RootfsDecompressor_nativeExtractTar(
             if (symlink(target, full_path) != 0) {
                 LOGE("symlink(%s -> %s) failed: %s (errno=%d)",
                      target, full_path, strerror(errno), errno);
-            } else {
-                LOGD("Created symlink: %s -> %s", full_path, target);
             }
-
+            // Symlinks on Linux don't have their own permissions, skip logging for each
             archive_write_finish_entry(ext);
             continue;
         }
 
         r = archive_write_header(ext, entry);
         if (r == ARCHIVE_OK) {
+            mode_t file_mode = archive_entry_mode(entry);
+            LOGD("Extracting: %s (mode=0%o, size=%lld)", name, file_mode,
+                 (long long)archive_entry_size(entry));
+
             if (archive_entry_size(entry) > 0) {
                 char buff[8192];
                 ssize_t len;
@@ -189,6 +193,11 @@ Java_com_estrin217_terminal_core_RootfsDecompressor_nativeExtractTar(
         } else {
             LOGE("archive_write_header failed for %s: %s",
                  full_path, archive_error_string(ext));
+        }
+
+        // Log progress every 500 entries
+        if (entry_count % 500 == 0) {
+            LOGD("Progress: %d entries extracted", entry_count);
         }
     }
 

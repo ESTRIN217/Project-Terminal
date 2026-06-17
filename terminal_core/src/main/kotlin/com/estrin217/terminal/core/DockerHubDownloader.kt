@@ -40,7 +40,8 @@ internal object DockerHubDownloader {
     @Serializable
     private data class DockerPlatform(
         val architecture: String? = null,
-        val os: String? = null
+        val os: String? = null,
+        val variant: String? = null
     )
 
     @Serializable
@@ -144,12 +145,22 @@ internal object DockerHubDownloader {
 
     private suspend fun resolveLayers(client: HttpClient, repo: String, token: String, manifest: DockerManifest): List<DockerManifestLayer> {
         if (manifest.layers.isNotEmpty()) {
+            com.estrin217.terminal.core.logger.DebugLogger.i("DockerHubDownloader", "Manifest has direct layers (${manifest.layers.size} found)")
             return manifest.layers
         }
 
-        val reference = manifest.manifests.firstOrNull { it.platform?.architecture == "arm64" }
+        com.estrin217.terminal.core.logger.DebugLogger.i("DockerHubDownloader", "Manifest list has ${manifest.manifests.size} entries. Selecting arm64 platform...")
+
+        // Preferir arm64 con variant v8 explícitamente, luego arm64 genérico
+        val reference = manifest.manifests.firstOrNull { ref ->
+            ref.platform?.architecture == "arm64" && ref.platform?.variant == "v8"
+        } ?: manifest.manifests.firstOrNull { it.platform?.architecture == "arm64" }
             ?: manifest.manifests.firstOrNull()
             ?: throw IOException("No manifest entries found for repository $repo")
+
+        val selectedPlatform = reference.platform
+        com.estrin217.terminal.core.logger.DebugLogger.i("DockerHubDownloader",
+            "Selected manifest: arch=${selectedPlatform?.architecture}, os=${selectedPlatform?.os}, variant=${selectedPlatform?.variant}, digest=${reference.digest.take(40)}...")
 
         val digest = reference.digest
         if (digest.isBlank()) {
@@ -170,14 +181,25 @@ internal object DockerHubDownloader {
         }
 
         val manifestText = response.bodyAsText()
-        return json.decodeFromString(DockerManifest.serializer(), manifestText).layers
+        val nestedManifest = json.decodeFromString(DockerManifest.serializer(), manifestText)
+        com.estrin217.terminal.core.logger.DebugLogger.i("DockerHubDownloader", "Nested manifest resolved with ${nestedManifest.layers.size} layers")
+        return nestedManifest.layers
     }
 
     private fun chooseLayer(layers: List<DockerManifestLayer>): DockerManifestLayer? {
-        return layers.firstOrNull { layer ->
+        val selected = layers.firstOrNull { layer ->
             val media = layer.mediaType?.lowercase() ?: ""
             media.contains("tar") || media.contains("gzip") || media.contains("xz") || media.contains("rootfs")
         } ?: layers.firstOrNull()
+
+        if (selected != null) {
+            com.estrin217.terminal.core.logger.DebugLogger.i("DockerHubDownloader",
+                "Layer selected: mediaType=${selected.mediaType}, digest=${selected.digest.take(40)}..., size=${selected.size}")
+        } else {
+            com.estrin217.terminal.core.logger.DebugLogger.e("DockerHubDownloader", "No suitable layer found among ${layers.size} entries")
+        }
+
+        return selected
     }
 
     private suspend fun downloadBlobWithStreaming(client: HttpClient, url: String, token: String, targetFile: File) {

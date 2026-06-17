@@ -22,4 +22,9 @@
     <string name="share_logs">Share logs</string>
     <string name="debug_logger_title">Debug Logger</string>
     <string name="error_exporting_logs">Error exporting logs</string>
+    <string name="install_error_title">Installation Error</string>
+    <string name="install_error_hint">You can retry the download or clear the cache and try again.</string>
+    <string name="retry_download">Retry Download</string>
+    <string name="clear_cache">Clear Cache</string>
+    <string name="close">Close</string>
 </resources>

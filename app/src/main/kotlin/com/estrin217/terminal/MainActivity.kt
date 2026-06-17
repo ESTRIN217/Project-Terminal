@@ -53,6 +53,8 @@ class MainActivity : ComponentActivity() {
     private val progressTextState = mutableStateOf("")
     private val controlActiveState = mutableStateOf(false)
     private val altActiveState = mutableStateOf(false)
+    private val showErrorDialogState = mutableStateOf(false)
+    private val errorMessageState = mutableStateOf("")
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -96,7 +98,11 @@ class MainActivity : ComponentActivity() {
 
         tempFile.delete()
 
-                    DebugLogger.i(TAG, "Import completed successfully")
+                    // Validar rootfs importado antes de marcar como instalado
+                    val rootfsDir = TerminalConfig.getRootfsDir(this@MainActivity)
+                    validateRootfsOrThrow(rootfsDir)
+                    TerminalConfig.getMarkerFile(this@MainActivity).createNewFile()
+                    DebugLogger.i(TAG, "Import completed successfully. Marker created after validation.")
                     runOnUiThread {
                         isInstallingState.value = false
                         Toast.makeText(this, "Import and install completed", Toast.LENGTH_LONG).show()
@@ -104,6 +110,7 @@ class MainActivity : ComponentActivity() {
                     }
                 } catch (e: Exception) {
                     DebugLogger.e(TAG, "Import failed", e)
+                    TerminalConfig.getMarkerFile(this@MainActivity).delete()
                     runOnUiThread {
                         isInstallingState.value = false
                         Toast.makeText(this, "Import failed: ${e.message}", Toast.LENGTH_LONG).show()
@@ -180,15 +187,20 @@ class MainActivity : ComponentActivity() {
                     DebugLogger.i(TAG, "Rootfs extraction completed successfully")
                     RootfsManager.ensureLoaderPermissions(this@MainActivity)
                     validateRootfsOrThrow(rootfsDir)
+                    // Crear marcador SOLO después de validación exitosa
+                    TerminalConfig.getMarkerFile(this@MainActivity).createNewFile()
+                    DebugLogger.i(TAG, "Created .installed marker after successful validation")
                     runOnUiThread {
                         isInstallingState.value = false
                         startAndBindService()
                     }
                 } catch (e: IOException) {
                     DebugLogger.e(TAG, "Error during rootfs extraction", e)
+                    TerminalConfig.getMarkerFile(this@MainActivity).delete()
                     runOnUiThread {
-                        progressTextState.value = LocaleManager.getString("extraction_error", e.message ?: "")
-                        Toast.makeText(this@MainActivity, LocaleManager.getString("install_error_toast", e.message ?: ""), Toast.LENGTH_LONG).show()
+                        isInstallingState.value = false
+                        errorMessageState.value = e.message ?: "Unknown error"
+                        showErrorDialogState.value = true
                     }
                 }
             }.start()
@@ -219,6 +231,20 @@ class MainActivity : ComponentActivity() {
         val isShellPresent = binSh.exists() || usrBinSh.exists()
 
         if (!isShellPresent) {
+            DebugLogger.e(TAG, "Shell binary not found — dumping rootfs directory tree for debugging:")
+            rootfsDir.listFiles()?.forEach { file ->
+                DebugLogger.e(TAG, "  rootfs/${file.name}  isDir=${file.isDirectory}  size=${if (file.isFile) file.length() else "N/A"}")
+                if (file.isDirectory) {
+                    val children = file.listFiles()
+                    if (children.isNullOrEmpty()) {
+                        DebugLogger.e(TAG, "    (empty)")
+                    } else {
+                        children.forEach { sub ->
+                            DebugLogger.e(TAG, "    ${sub.name}  isDir=${sub.isDirectory}  size=${if (sub.isFile) sub.length() else "N/A"}")
+                        }
+                    }
+                }
+            }
             throw IOException("Shell binary not found at expected locations (bin/sh or usr/bin/sh)")
         }
 
@@ -279,6 +305,30 @@ class MainActivity : ComponentActivity() {
                     },
                     modifier = Modifier.fillMaxSize()
                 )
+
+                // Error dialog for rootfs installation failures
+                val showErrorDialog by showErrorDialogState
+                val errorMessage by errorMessageState
+                if (showErrorDialog) {
+                    RootfsErrorDialog(
+                        errorMessage = errorMessage,
+                        onRetry = {
+                            showErrorDialogState.value = false
+                            RootfsManager.forceReinstall(context)
+                            checkAndInstallRootfs()
+                        },
+                        onClearCache = {
+                            showErrorDialogState.value = false
+                            context.cacheDir.deleteRecursively()
+                            context.cacheDir.mkdirs()
+                            RootfsManager.forceReinstall(context)
+                            checkAndInstallRootfs()
+                        },
+                        onDismiss = {
+                            showErrorDialogState.value = false
+                        }
+                    )
+                }
 
                 // Loading overlay for first-run rootfs extraction
                 if (isInstalling) {
@@ -350,6 +400,54 @@ class MainActivity : ComponentActivity() {
                 }
             )
         }
+    }
+
+    @Composable
+    fun RootfsErrorDialog(
+        errorMessage: String,
+        onRetry: () -> Unit,
+        onClearCache: () -> Unit,
+        onDismiss: () -> Unit
+    ) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = {
+                Text(
+                    text = LocaleManager.getString("install_error_title"),
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = errorMessage,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = LocaleManager.getString("install_error_hint"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+            },
+            confirmButton = {
+                OutlinedButton(onClick = onRetry) {
+                    Text(LocaleManager.getString("retry_download"))
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onDismiss) {
+                        Text(LocaleManager.getString("close"))
+                    }
+                    OutlinedButton(onClick = onClearCache) {
+                        Text(LocaleManager.getString("clear_cache"))
+                    }
+                }
+            }
+        )
     }
 
     override fun onDestroy() {

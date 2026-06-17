@@ -80,13 +80,11 @@ object RootfsManager {
         tmpDir.setExecutable(true, false)
         tmpDir.setReadable(true, false)
 
-        // Forzar permisos de ejecución en binarios críticos antes de marcar como instalado
+        // Forzar permisos de ejecución en binarios críticos
         fixRootfsPermissions(rootfsDir)
 
-        // Crear el marcador de instalación completada exitosamente
-        val marker = TerminalConfig.getMarkerFile(context)
-        marker.createNewFile() 
-        com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Installation completed. Created marker: ${marker.absolutePath}")
+        // NOTA: el marcador .installed se crea en MainActivity DESPUÉS de validateRootfsOrThrow
+        // para evitar que quede un marcador huérfano si la validación falla
 
         // Limpieza del archivo binario temporal de la caché
         if (downloadedBlob.delete()) {
@@ -395,7 +393,6 @@ object RootfsManager {
 
     fixRootfsPermissions(rootfsDir)
     
-    // Crear el marcador para que la app sepa que está listo
-    TerminalConfig.getMarkerFile(context).createNewFile()
+    // NOTA: el marcador .installed se crea en MainActivity DESPUÉS de la validación
     }
 }

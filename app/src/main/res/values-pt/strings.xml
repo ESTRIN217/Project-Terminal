@@ -22,4 +22,9 @@
     <string name="share_logs">Partilhar logs</string>
     <string name="debug_logger_title">Depurador de Logs</string>
     <string name="error_exporting_logs">Erro ao exportar logs</string>
+    <string name="install_error_title">Erro de instalação</string>
+    <string name="install_error_hint">Pode tentar novamente o download ou limpar a cache e tentar de novo.</string>
+    <string name="retry_download">Tentar novamente</string>
+    <string name="clear_cache">Limpar cache</string>
+    <string name="close">Fechar</string>
 </resources>
