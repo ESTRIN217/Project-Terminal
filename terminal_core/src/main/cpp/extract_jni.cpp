@@ -100,10 +100,15 @@ Java_com_estrin217_terminal_core_RootfsDecompressor_nativeExtractTar(
     archive_read_support_filter_all(a);
     archive_read_support_format_all(a);
 
+    // NOTE: ARCHIVE_EXTRACT_SECURE_SYMLINKS is intentionally NOT used.
+    // Debian usr-merge rootfs contains symlinks like  bin -> usr/bin
+    // followed by entries like  bin/bash  that resolve through the symlink.
+    // ARCHIVE_EXTRACT_SECURE_SYMLINKS would refuse to follow the symlink
+    // and fail extraction. We rely on manual symlink handling below and
+    // ARCHIVE_EXTRACT_SECURE_NODOTDOT for path traversal protection.
     archive_write_disk_set_options(ext,
         ARCHIVE_EXTRACT_PERM |
         ARCHIVE_EXTRACT_TIME |
-        ARCHIVE_EXTRACT_SECURE_SYMLINKS |
         ARCHIVE_EXTRACT_SECURE_NODOTDOT |
         ARCHIVE_EXTRACT_UNLINK);
 
@@ -144,14 +149,22 @@ Java_com_estrin217_terminal_core_RootfsDecompressor_nativeExtractTar(
 
         archive_entry_set_pathname(entry, full_path);
 
-        // Handle symlinks manually to avoid ARCHIVE_EXTRACT_SECURE_SYMLINKS
-        // blocking symlinks whose targets resolve outside dest_dir
+        // Handle symlinks manually: libarchive's write_disk would try to
+        // use ARCHIVE_EXTRACT_SECURE_SYMLINKS internally, but we need to
+        // allow extraction through usr-merge symlinks like bin -> usr/bin.
         if (archive_entry_filetype(entry) == AE_IFLNK) {
             const char* target = archive_entry_symlink(entry);
             if (target == nullptr) {
                 LOGE("Symlink entry with null target: %s", name);
-                archive_write_finish_entry(ext);
-                continue;
+                success = false;
+                break;
+            }
+
+            // Check target for path traversal
+            if (strstr(target, "..") != nullptr || target[0] == '/') {
+                LOGE("Symlink target path traversal blocked: %s -> %s", name, target);
+                success = false;
+                break;
             }
 
             // Ensure parent directory exists before creating symlink
@@ -171,9 +184,12 @@ Java_com_estrin217_terminal_core_RootfsDecompressor_nativeExtractTar(
             if (symlink(target, full_path) != 0) {
                 LOGE("symlink(%s -> %s) failed: %s (errno=%d)",
                      target, full_path, strerror(errno), errno);
+                success = false;
+                break;
             }
-            // Symlinks on Linux don't have their own permissions, skip logging for each
-            archive_write_finish_entry(ext);
+
+            // No archive_write_finish_entry here — we handled the entry
+            // entirely outside libarchive's write_disk pipeline.
             continue;
         }
 

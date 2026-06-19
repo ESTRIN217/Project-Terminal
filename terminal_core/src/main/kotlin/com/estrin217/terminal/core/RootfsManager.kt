@@ -68,6 +68,10 @@ object RootfsManager {
             }
         } catch (e: Exception) {
             com.estrin217.terminal.core.logger.DebugLogger.e("RootfsManager", "Error extracting rootfs tar archive", e)
+            // Limpieza completa en caso de fallo para evitar estado inconsistente
+            if (rootfsDir.exists()) {
+                rootfsDir.deleteRecursively()
+            }
             throw e
         }
 
@@ -370,14 +374,22 @@ object RootfsManager {
     try {
         tempFile.outputStream().use { output -> inputStream.copyTo(output) }
 
-        val nativeSuccess = runBlocking {
-            RootfsDecompressor.extractDebianRootfs(context, tempFile, rootfsDir)
-        }
-        if (!nativeSuccess) {
-            com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Native extraction unavailable for custom rootfs, falling back to Java")
-            tempFile.inputStream().use { savedStream ->
-                extractTarArchive(savedStream, rootfsDir, progressCallback)
+        try {
+            val nativeSuccess = runBlocking {
+                RootfsDecompressor.extractDebianRootfs(context, tempFile, rootfsDir)
             }
+            if (!nativeSuccess) {
+                com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Native extraction unavailable for custom rootfs, falling back to Java")
+                tempFile.inputStream().use { savedStream ->
+                    extractTarArchive(savedStream, rootfsDir, progressCallback)
+                }
+            }
+        } catch (e: Exception) {
+            com.estrin217.terminal.core.logger.DebugLogger.e("RootfsManager", "Error extracting custom rootfs", e)
+            if (rootfsDir.exists()) {
+                rootfsDir.deleteRecursively()
+            }
+            throw e
         }
     } finally {
         tempFile.delete()

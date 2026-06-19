@@ -111,6 +111,10 @@ class MainActivity : ComponentActivity() {
                 } catch (e: Exception) {
                     DebugLogger.e(TAG, "Import failed", e)
                     TerminalConfig.getMarkerFile(this@MainActivity).delete()
+                    val rootfsDir = TerminalConfig.getRootfsDir(this@MainActivity)
+                    if (rootfsDir.exists()) {
+                        rootfsDir.deleteRecursively()
+                    }
                     runOnUiThread {
                         isInstallingState.value = false
                         Toast.makeText(this, "Import failed: ${e.message}", Toast.LENGTH_LONG).show()
@@ -197,6 +201,10 @@ class MainActivity : ComponentActivity() {
                 } catch (e: IOException) {
                     DebugLogger.e(TAG, "Error during rootfs extraction", e)
                     TerminalConfig.getMarkerFile(this@MainActivity).delete()
+                    // Limpieza completa para evitar estado inconsistente en reinicio
+                    if (rootfsDir.exists()) {
+                        rootfsDir.deleteRecursively()
+                    }
                     runOnUiThread {
                         isInstallingState.value = false
                         errorMessageState.value = e.message ?: "Unknown error"
