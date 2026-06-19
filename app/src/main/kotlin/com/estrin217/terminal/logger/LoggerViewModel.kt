@@ -2,8 +2,12 @@ package com.estrin217.terminal.logger
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
@@ -96,5 +100,53 @@ class LoggerViewModel : ViewModel() {
 
     fun exportCombinedLog() {
         TerminalApplication.instance.exportCombinedLogToShared()
+    }
+
+    fun saveLogsToDownloads(context: Context) {
+        try {
+            val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())
+            val fileName = "terminal_logs_$timestamp.txt"
+            val logsText = DebugLogger.getLogsAsText()
+
+            if (logsText == "No logs available") {
+                Toast.makeText(context, LocaleManager.getString("no_logs_copy"), Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            val combined = buildString {
+                appendLine("=" .repeat(50))
+                appendLine("  Terminal Logs - Project Terminal")
+                appendLine("  Generated: $timestamp")
+                appendLine("=" .repeat(50))
+                appendLine()
+                appendLine(logsText)
+                appendLine()
+                appendLine(DebugLogger.getStatistics())
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                    put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+                    put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/TerminalLogs")
+                }
+                val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                uri?.let {
+                    context.contentResolver.openOutputStream(it)?.use { out ->
+                        out.write(combined.toByteArray())
+                    }
+                }
+            } else {
+                val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val logsDir = File(dir, "TerminalLogs")
+                logsDir.mkdirs()
+                File(logsDir, fileName).writeText(combined)
+            }
+            Toast.makeText(context, "Logs saved to Downloads/TerminalLogs/$fileName", Toast.LENGTH_LONG).show()
+            DebugLogger.i("LoggerViewModel", "Logs saved to Downloads: $fileName")
+        } catch (e: Exception) {
+            DebugLogger.e("LoggerViewModel", "Failed to save logs to Downloads", e)
+            Toast.makeText(context, "Error saving logs: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 }

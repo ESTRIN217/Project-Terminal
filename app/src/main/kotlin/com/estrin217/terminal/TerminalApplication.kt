@@ -48,12 +48,22 @@ class TerminalApplication : Application() {
         val logDir = File(filesDir, "logs")
         if (!logDir.exists()) logDir.mkdirs()
         val logFile = File(logDir, "diagnostic_$sessionId.log")
+        DiagnosticPipeline.registerSink(DiskSink(logFile, maxFileSize = 5 * 1024 * 1024, maxRotatedFiles = 3))
+
+        // Mirror logs to external files dir for accessibility
+        try {
+            val extLogDir = File(getExternalFilesDir(null), "logs")
+            if (!extLogDir.exists()) extLogDir.mkdirs()
+            val extLogFile = File(extLogDir, "diagnostic_$sessionId.log")
+            DiagnosticPipeline.registerSink(DiskSink(extLogFile, maxFileSize = 2 * 1024 * 1024, maxRotatedFiles = 2))
+        } catch (e: Exception) {
+            DebugLogger.w("TerminalApplication", "Cannot create external log sink: ${e.message}")
+        }
 
         DiagnosticPipeline.registerSink(LogcatSink())
-        DiagnosticPipeline.registerSink(DiskSink(logFile, maxFileSize = 5 * 1024 * 1024, maxRotatedFiles = 3))
         DiagnosticPipeline.registerSink(DebugLoggerSink())
 
-        DebugLogger.i("TerminalApplication", "DiagnosticPipeline initialized with LogcatSink, DiskSink, DebugLoggerSink")
+        DebugLogger.i("TerminalApplication", "DiagnosticPipeline initialized with LogcatSink, DiskSink(x2), DebugLoggerSink")
 
         checkForPreviousCrash()
     }

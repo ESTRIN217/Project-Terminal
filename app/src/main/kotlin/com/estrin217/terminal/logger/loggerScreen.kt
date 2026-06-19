@@ -164,6 +164,12 @@ fun LoggerScreen(
                     Text("Export Log", fontSize = 11.sp)
                 }
 
+                OutlinedButton(onClick = { viewModel.saveLogsToDownloads(context) }, modifier = buttonModifier, contentPadding = PaddingValues(4.dp)) {
+                    Icon(Icons.Outlined.FileDownload, contentDescription = "Save to Downloads", modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Save", fontSize = 11.sp)
+                }
+
                 Button(
                     onClick = { showClearDialog = true },
                     modifier = buttonModifier,
