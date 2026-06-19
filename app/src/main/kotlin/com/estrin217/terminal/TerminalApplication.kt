@@ -12,6 +12,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import com.estrin217.terminal.core.SettingsDataStore
 import com.estrin217.terminal.core.logger.DebugLogger
 import com.estrin217.terminal.core.logger.DiagnosticPipeline
 import com.estrin217.terminal.core.logger.DiskSink
@@ -39,6 +40,8 @@ class TerminalApplication : Application() {
         super.onCreate()
         instance = this
         sessionId = UUID.randomUUID().toString().take(8)
+
+        SettingsDataStore.init(this)
 
         DiagnosticPipeline.setSessionId(sessionId)
         DebugLogger.setSessionId(sessionId)

@@ -12,6 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -24,20 +25,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
-import com.estrin217.terminal.core.LocaleManager
-import com.estrin217.terminal.core.RootfsManager
-import com.estrin217.terminal.core.TerminalBridge
-import com.estrin217.terminal.core.TerminalConfig
-import com.estrin217.terminal.core.TerminalService
-import com.estrin217.terminal.core.TerminalSurface
-import com.estrin217.terminal.core.TerminalSurfaceState
-import com.estrin217.terminal.core.SpecialKeysBar
-import com.estrin217.terminal.core.rememberTerminalSurfaceState
+import com.estrin217.terminal.core.*
 import com.estrin217.terminal.core.logger.DebugLogger
-import com.estrin217.terminal.core.ConnectivityUtils
 import com.estrin217.terminal.logger.LoggerActivity
 import java.io.File
 import java.io.IOException
@@ -56,13 +48,19 @@ class MainActivity : ComponentActivity() {
     private val showErrorDialogState = mutableStateOf(false)
     private val errorMessageState = mutableStateOf("")
 
+    enum class Tab(val label: String) { TERMINAL("Terminal"), FILES("Files"), SETTINGS("Settings") }
+    private val selectedTab = mutableStateOf(Tab.TERMINAL)
+    private val sessionTabIds = mutableStateListOf<String>()
+    private val activeSessionTab = mutableStateOf<String?>(null)
+    private val themeRefreshTrigger = mutableStateOf(0)
+
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             DebugLogger.i(TAG, "ServiceConnection connected")
             val binder = service as? TerminalService.TerminalServiceBinder
             terminalService = binder?.getService()
             isBound = true
-            setupTerminalSession()
+            ensureDefaultSession()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -137,15 +135,40 @@ class MainActivity : ComponentActivity() {
         val crashPath = TerminalApplication.pendingCrashReportPath
 
         setContent {
-            MaterialTheme(
-                colorScheme = darkColorScheme(
+            // Re-evaluate theme when returning from Settings (onResume increments trigger)
+            val themeMode = remember(themeRefreshTrigger.value) { SettingsDataStore.themeMode }
+            val colorScheme = when (themeMode) {
+                SettingsDataStore.ThemeMode.LIGHT -> lightColorScheme(
+                    primary = Color(0xFF6750A4),
+                    secondary = Color(0xFF625B71),
+                    tertiary = Color(0xFF7D5260),
+                    background = Color(0xFFFFFBFE),
+                    surface = Color(0xFFFFFBFE)
+                )
+                SettingsDataStore.ThemeMode.SYSTEM -> {
+                    if (isSystemInDarkTheme()) darkColorScheme(
+                        primary = Color(0xFFD0BCFF),
+                        secondary = Color(0xFFCCC2DC),
+                        tertiary = Color(0xFFEFB8C8),
+                        background = Color(0xFF121212),
+                        surface = Color(0xFF1E1E1E)
+                    ) else lightColorScheme(
+                        primary = Color(0xFF6750A4),
+                        secondary = Color(0xFF625B71),
+                        tertiary = Color(0xFF7D5260),
+                        background = Color(0xFFFFFBFE),
+                        surface = Color(0xFFFFFBFE)
+                    )
+                }
+                SettingsDataStore.ThemeMode.DARK -> darkColorScheme(
                     primary = Color(0xFFD0BCFF),
                     secondary = Color(0xFFCCC2DC),
                     tertiary = Color(0xFFEFB8C8),
                     background = Color(0xFF121212),
                     surface = Color(0xFF1E1E1E)
                 )
-            ) {
+            }
+            MaterialTheme(colorScheme = colorScheme) {
                 if (showCrashDialog && crashPath != null) {
                     CrashReportDialog(
                         crashPath = crashPath,
@@ -222,14 +245,58 @@ class MainActivity : ComponentActivity() {
         bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
     }
 
-    private fun setupTerminalSession() {
-        DebugLogger.i(TAG, "Setting up terminal session and attaching to TerminalView")
+    private fun ensureDefaultSession() {
+        val service = terminalService ?: return
+        if (service.activeSessionIds.isEmpty()) {
+            val bridge = terminalBridge ?: return
+            service.newSession(this, bridge)
+            val id = service.currentSessionId ?: return
+            sessionTabIds.add(id)
+            activeSessionTab.value = id
+            DebugLogger.i(TAG, "Default session created: $id")
+        } else {
+            val id = service.activeSessionIds.first()
+            activeSessionTab.value = id
+            val state = terminalSurfaceStateRef ?: return
+            val session = service.getSession(id) ?: return
+            state.attachSession(session)
+            DebugLogger.i(TAG, "Using existing session: $id")
+        }
+    }
+
+    private fun addNewSession() {
         val service = terminalService ?: return
         val bridge = terminalBridge ?: return
+        service.newSession(this, bridge)
+        val id = service.currentSessionId ?: return
+        sessionTabIds.add(id)
+        activeSessionTab.value = id
+        DebugLogger.i(TAG, "New session added: $id")
+    }
+
+    private fun closeSession(id: String) {
+        val service = terminalService ?: return
+        service.removeSession(id, this)
+        sessionTabIds.remove(id)
+        if (sessionTabIds.isEmpty()) {
+            finish()
+        } else {
+            val newId = sessionTabIds.firstOrNull() ?: return
+            activeSessionTab.value = newId
+            val state = terminalSurfaceStateRef ?: return
+            val session = service.getSession(newId) ?: return
+            state.attachSession(session)
+        }
+    }
+
+    private fun setupTerminalSession(sessionId: String? = null) {
+        DebugLogger.i(TAG, "Setting up terminal session and attaching to TerminalView")
+        val service = terminalService ?: return
+        val id = sessionId ?: service.currentSessionId ?: return
         val state = terminalSurfaceStateRef ?: return
-        val session = service.createOrGetSession(this, bridge)
+        val session = service.getSession(id) ?: return
         state.attachSession(session)
-        DebugLogger.i(TAG, "Terminal session successfully attached")
+        DebugLogger.i(TAG, "Terminal session $id successfully attached")
     }
 
     private fun validateRootfsOrThrow(rootfsDir: File) {
@@ -269,13 +336,6 @@ class MainActivity : ComponentActivity() {
         DebugLogger.i(TAG, "Rootfs validation passed: $shellLabel is executable")
     }
 
-    /** Called from AndroidView factory when bridge becomes available */
-    private fun onBridgeReady() {
-        if (isBound && terminalService != null) {
-            setupTerminalSession()
-        }
-    }
-
     @Composable
     fun MainScreen() {
         val isInstalling by isInstallingState
@@ -283,130 +343,126 @@ class MainActivity : ComponentActivity() {
         val controlActive by controlActiveState
         val altActive by altActiveState
         val context = LocalContext.current
+        val tab by selectedTab
+        val sessionIds = sessionTabIds.toList()
+        val activeId by activeSessionTab
+
         val state = rememberTerminalSurfaceState()
         terminalSurfaceStateRef = state
 
-        Column(
+        Scaffold(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            ) {
-                TerminalSurface(
-                    state = state,
-                    onBridgeCreated = { bridge ->
-                        terminalBridge = bridge
-                        bridge.modifierKeyConsumedListener = object : TerminalBridge.OnModifierKeyConsumedListener {
-                            override fun onControlKeyConsumed() {
-                                controlActiveState.value = false
-                            }
-
-                            override fun onAltKeyConsumed() {
-                                altActiveState.value = false
-                            }
-                        }
-                        onBridgeReady()
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                // Error dialog for rootfs installation failures
-                val showErrorDialog by showErrorDialogState
-                val errorMessage by errorMessageState
-                if (showErrorDialog) {
-                    RootfsErrorDialog(
-                        errorMessage = errorMessage,
-                        onRetry = {
-                            showErrorDialogState.value = false
-                            RootfsManager.forceReinstall(context)
-                            checkAndInstallRootfs()
-                        },
-                        onClearCache = {
-                            showErrorDialogState.value = false
-                            context.cacheDir.deleteRecursively()
-                            context.cacheDir.mkdirs()
-                            RootfsManager.forceReinstall(context)
-                            checkAndInstallRootfs()
-                        },
-                        onDismiss = {
-                            showErrorDialogState.value = false
-                        }
-                    )
+                .background(MaterialTheme.colorScheme.background),
+            bottomBar = {
+                if (!isInstalling) {
+                    NavigationBar {
+                        NavigationBarItem(
+                            selected = tab == Tab.TERMINAL,
+                            onClick = { selectedTab.value = Tab.TERMINAL },
+                            icon = { Icon(Icons.Outlined.Terminal, contentDescription = null) },
+                            label = { Text(Tab.TERMINAL.label) }
+                        )
+                        NavigationBarItem(
+                            selected = tab == Tab.FILES,
+                            onClick = { selectedTab.value = Tab.FILES },
+                            icon = { Icon(Icons.Outlined.Folder, contentDescription = null) },
+                            label = { Text(Tab.FILES.label) }
+                        )
+                        NavigationBarItem(
+                            selected = tab == Tab.SETTINGS,
+                            onClick = { selectedTab.value = Tab.SETTINGS },
+                            icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
+                            label = { Text(Tab.SETTINGS.label) }
+                        )
+                    }
                 }
-
-                // Loading overlay for first-run rootfs extraction
-                if (isInstalling) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color(0xE6121212)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.padding(24.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                CircularProgressIndicator(
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
-                                    text = LocaleManager.getString("loading_text"),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = progressText,
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = LocaleManager.getString("progress_desc"),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                )
+            }
+        ) { padding ->
+            Box(modifier = Modifier.padding(padding)) {
+                when (tab) {
+                    Tab.FILES -> {
+                        FileManagerScreen(
+                            initialPath = TerminalConfig.getRootfsDir(context),
+                            onBackPressed = { selectedTab.value = Tab.TERMINAL }
+                        )
+                    }
+                    Tab.SETTINGS -> {
+                        SettingsScreen(
+                            onBackPressed = { selectedTab.value = Tab.TERMINAL }
+                        )
+                    }
+                    Tab.TERMINAL -> {
+                        TerminalTabContent(
+                            state = state,
+                            bridge = terminalBridge,
+                            sessionIds = sessionIds,
+                            activeId = activeId,
+                            isInstalling = isInstalling,
+                            progressText = progressText,
+                            controlActiveState = controlActiveState,
+                            altActiveState = altActiveState,
+                            onBridgeCreated = { bridge ->
+                                terminalBridge = bridge
+                                bridge.modifierKeyConsumedListener = object : TerminalBridge.OnModifierKeyConsumedListener {
+                                    override fun onControlKeyConsumed() {
+                                        controlActiveState.value = false
+                                    }
+                                    override fun onAltKeyConsumed() {
+                                        altActiveState.value = false
+                                    }
+                                }
+                                ensureDefaultSession()
+                            },
+                            onAddSession = { addNewSession() },
+                            onCloseSession = { id -> closeSession(id) },
+                            onSwitchSession = { id ->
+                                val service = terminalService ?: return@TerminalTabContent
+                                service.switchSession(id)
+                                activeSessionTab.value = id
+                                val session = service.getSession(id) ?: return@TerminalTabContent
+                                state.attachSession(session)
+                                DebugLogger.i(TAG, "Switched to session: $id")
+                            },
+                            onNavigateToLogger = {
+                                DebugLogger.i(TAG, "Navigating to LoggerActivity")
+                                val intent = Intent(context, LoggerActivity::class.java)
+                                context.startActivity(intent)
+                            },
+                            onPickRootfs = {
+                                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                                    addCategory(Intent.CATEGORY_OPENABLE)
+                                    type = "*/*"
+                                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/x-xz", "application/gzip", "application/x-tar", "application/octet-stream"))
+                                }
+                                pickRootfsLauncher.launch(intent)
                             }
-                        }
+                        )
                     }
                 }
             }
 
-            SpecialKeysBar(
-                state = state,
-                bridge = terminalBridge,
-                controlActive = controlActive,
-                altActive = altActive,
-                onControlKeyChanged = { controlActiveState.value = it },
-                onAltKeyChanged = { altActiveState.value = it },
-                onNavigateToLogger = {
-                    DebugLogger.i(TAG, "Navigating to LoggerActivity")
-                    val intent = Intent(context, LoggerActivity::class.java)
-                    context.startActivity(intent)
-                },
-                onPickRootfs = {
-                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                        addCategory(Intent.CATEGORY_OPENABLE)
-                        type = "*/*"
-                        putExtra(
-                            Intent.EXTRA_MIME_TYPES,
-                            arrayOf("application/x-xz", "application/gzip", "application/x-tar", "application/octet-stream")
-                        )
-                    }
-                    pickRootfsLauncher.launch(intent)
-                }
-            )
+            // Error dialog for rootfs installation failures (shown on top)
+            val showErrorDialog by showErrorDialogState
+            val errorMessage by errorMessageState
+            if (showErrorDialog) {
+                RootfsErrorDialog(
+                    errorMessage = errorMessage,
+                    onRetry = {
+                        showErrorDialogState.value = false
+                        RootfsManager.forceReinstall(context)
+                        checkAndInstallRootfs()
+                    },
+                    onClearCache = {
+                        showErrorDialogState.value = false
+                        context.cacheDir.deleteRecursively()
+                        context.cacheDir.mkdirs()
+                        RootfsManager.forceReinstall(context)
+                        checkAndInstallRootfs()
+                    },
+                    onDismiss = { showErrorDialogState.value = false }
+                )
+            }
         }
     }
 
@@ -474,6 +530,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        themeRefreshTrigger.value++
         DebugLogger.i(TAG, "MainActivity onResume")
     }
 
@@ -539,6 +596,144 @@ class MainActivity : ComponentActivity() {
                         Text("Descartar")
                     }
                 }
+            )
+        }
+    }
+
+    @Composable
+    private fun TerminalTabContent(
+        state: TerminalSurfaceState,
+        bridge: TerminalBridge?,
+        sessionIds: List<String>,
+        activeId: String?,
+        isInstalling: Boolean,
+        progressText: String,
+        controlActiveState: MutableState<Boolean>,
+        altActiveState: MutableState<Boolean>,
+        onBridgeCreated: (TerminalBridge) -> Unit,
+        onAddSession: () -> Unit,
+        onCloseSession: (String) -> Unit,
+        onSwitchSession: (String) -> Unit,
+        onNavigateToLogger: () -> Unit,
+        onPickRootfs: () -> Unit
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
+            // Session tabs
+            if (sessionIds.isNotEmpty()) {
+                ScrollableTabRow(
+                    selectedTabIndex = sessionIds.indexOf(activeId).coerceAtLeast(0),
+                    edgePadding = 8.dp,
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    sessionIds.forEach { id ->
+                        val index = sessionIds.indexOf(id)
+                        val isSelected = id == activeId
+                        Tab(
+                            selected = isSelected,
+                            onClick = { onSwitchSession(id) },
+                            text = { Text("Session ${index + 1}", maxLines = 1) },
+                            icon = {
+                                if (sessionIds.size > 1) {
+                                    IconButton(
+                                        onClick = { onCloseSession(id) },
+                                        modifier = Modifier.size(18.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Close,
+                                            contentDescription = "Close",
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        )
+                    }
+                    Tab(
+                        selected = false,
+                        onClick = onAddSession,
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Outlined.Add,
+                                contentDescription = "New session",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        text = {}
+                    )
+                }
+            }
+
+            // Terminal area
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
+                TerminalSurface(
+                    state = state,
+                    onBridgeCreated = onBridgeCreated,
+                    bridge = bridge,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // Loading overlay for first-run rootfs extraction
+                if (isInstalling) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xE6121212)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.padding(24.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = LocaleManager.getString("loading_text"),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = progressText,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = LocaleManager.getString("progress_desc"),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            SpecialKeysBar(
+                state = state,
+                bridge = bridge,
+                controlActive = controlActiveState.value,
+                altActive = altActiveState.value,
+                onControlKeyChanged = { controlActiveState.value = it },
+                onAltKeyChanged = { altActiveState.value = it },
+                onNavigateToLogger = onNavigateToLogger,
+                onPickRootfs = onPickRootfs
             )
         }
     }

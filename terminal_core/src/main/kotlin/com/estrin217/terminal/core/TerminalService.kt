@@ -16,12 +16,15 @@ import androidx.core.app.NotificationCompat
 import com.estrin217.terminal.core.logger.DebugLogger
 import com.termux.terminal.TerminalSession
 import java.io.File
+import java.util.UUID
 
 class TerminalService : Service() {
 
     private val binder = TerminalServiceBinder()
-    var currentSession: TerminalSession? = null
-        private set
+    private val sessions = mutableMapOf<String, TerminalSession>()
+    var currentSessionId: String? = null
+    val currentSession: TerminalSession? get() = currentSessionId?.let { sessions[it] }
+    val activeSessionIds: Set<String> get() = sessions.keys
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiLock? = null
@@ -101,8 +104,10 @@ class TerminalService : Service() {
 
     fun createOrGetSession(context: Context, bridge: TerminalBridge): TerminalSession {
         currentSession?.let { return it }
+        return newSession(context, bridge)
+    }
 
-        // Validate PRoot binary before attempting to launch
+    fun newSession(context: Context, bridge: TerminalBridge): TerminalSession {
         if (!validatePRootBinary(context)) {
             DebugLogger.e("TerminalService", "PRoot binary validation failed - session will fail")
         }
@@ -121,12 +126,10 @@ class TerminalService : Service() {
         val args = TerminalConfig.getPRootArgs(context, "/bin/sh")
         val env = TerminalConfig.getEnvironmentVariables(context)
 
-        // Log full command line for debugging
         DebugLogger.i("TerminalService", "Creating session: shellPath=$shellPath, cwd=$cwd")
         args.forEachIndexed { i, arg -> DebugLogger.d("TerminalService", "  args[$i]=\"$arg\"") }
         env.forEach { e -> DebugLogger.d("TerminalService", "  env: $e") }
 
-        // Validate rootfs shell exists before launching
         val rootfsDir = TerminalConfig.getRootfsDir(context)
         val binSh = File(File(rootfsDir, "bin"), "sh")
         val usrBinSh = File(File(rootfsDir, "usr/bin"), "sh")
@@ -143,14 +146,41 @@ class TerminalService : Service() {
             bridge
         )
 
-        currentSession = session
-        DebugLogger.i("TerminalService", "Session created: handle=${session.mHandle}")
+        val id = UUID.randomUUID().toString()
+        sessions[id] = session
+        currentSessionId = id
+        DebugLogger.i("TerminalService", "Session created: id=$id, handle=${session.mHandle}")
         return session
     }
 
+    fun getSession(id: String): TerminalSession? = sessions[id]
+
+    fun removeSession(id: String, context: Context) {
+        val session = sessions[id]
+        if (session != null) {
+            session.finishIfRunning()
+            sessions.remove(id)
+            if (sessions.isEmpty()) {
+                stopSelf()
+            } else if (id == currentSessionId) {
+                currentSessionId = sessions.keys.firstOrNull()
+            }
+            DebugLogger.i("TerminalService", "Session removed: id=$id, remaining=${sessions.size}")
+        }
+    }
+
+    fun switchSession(id: String) {
+        if (sessions.containsKey(id)) {
+            val oldId = currentSessionId
+            currentSessionId = id
+            DebugLogger.i("TerminalService", "Switched session: $oldId -> $id")
+        }
+    }
+
     fun stopSession() {
-        currentSession?.finishIfRunning()
-        currentSession = null
+        sessions.values.forEach { it.finishIfRunning() }
+        sessions.clear()
+        currentSessionId = null
         stopSelf()
     }
 
