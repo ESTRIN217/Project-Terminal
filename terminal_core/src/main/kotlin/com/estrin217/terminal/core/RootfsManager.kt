@@ -11,6 +11,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.util.zip.GZIPInputStream
 import kotlinx.coroutines.runBlocking
+import com.estrin217.terminal.core.logger.DebugLogger
 
 object RootfsManager {
 

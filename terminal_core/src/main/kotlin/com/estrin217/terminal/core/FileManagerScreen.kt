@@ -65,7 +65,7 @@ fun FileManagerScreen(
     ) { padding ->
         val children = remember(currentDir) {
             currentDir.listFiles()?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
-                ?: emptyArray()
+                ?: emptyList()
         }
 
         LazyColumn(
