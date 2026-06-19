@@ -87,6 +87,12 @@ object RootfsManager {
         // Forzar permisos de ejecución en binarios críticos
         fixRootfsPermissions(rootfsDir)
 
+        // Verificar y reparar enlaces simbólicos usr-merge de Debian
+        val brokenSymlinks = verifyCriticalSymlinks(rootfsDir)
+        if (brokenSymlinks.isNotEmpty()) {
+            repairCriticalSymlinks(rootfsDir)
+        }
+
         // NOTA: el marcador .installed se crea en MainActivity DESPUÉS de validateRootfsOrThrow
         // para evitar que quede un marcador huérfano si la validación falla
 
@@ -234,11 +240,75 @@ object RootfsManager {
     }
 
     /**
-     * Fuerza permisos de lectura y ejecución en binarios críticos que PRoot necesita
-     * para arrancar una sesión de shell. También repara enlaces simbólicos rotos
-     * (ej: /bin/sh -> inexistente) recreándolos contra un shell real disponible.
+     * Verifica enlaces simbólicos críticos del rootfs Debian (usr-merge).
+     * Retorna lista de symlinks rotos.
      */
-    private fun fixRootfsPermissions(rootfsDir: File) {
+    fun verifyCriticalSymlinks(rootfsDir: File): List<Pair<String, String>> {
+        val broken = mutableListOf<Pair<String, String>>()
+        val criticalSymlinks = listOf(
+            "bin" to "usr/bin",
+            "sbin" to "usr/sbin",
+            "lib" to "usr/lib",
+            "lib64" to "usr/lib64"
+        )
+        criticalSymlinks.forEach { (link, target) ->
+            val symFile = File(rootfsDir, link)
+            if (symFile.exists() && java.nio.file.Files.isSymbolicLink(symFile.toPath())) {
+                val resolved = java.nio.file.Files.readSymbolicLink(symFile.toPath()).toString()
+                if (resolved != target) {
+                    broken.add(link to resolved)
+                    DebugLogger.w("RootfsManager", "Symlink $link -> $resolved (expected -> $target)")
+                }
+            } else if (!symFile.exists()) {
+                // Check if the target directory actually exists
+                val targetDir = File(rootfsDir, target)
+                if (targetDir.exists() && targetDir.isDirectory) {
+                    broken.add(link to "(missing)")
+                    DebugLogger.w("RootfsManager", "Missing critical symlink: $link (target $target exists)")
+                }
+            }
+        }
+        if (broken.isEmpty()) {
+            DebugLogger.i("RootfsManager", "All critical symlinks verified OK")
+        } else {
+            DebugLogger.w("RootfsManager", "Found ${broken.size} broken/missing symlinks")
+        }
+        return broken
+    }
+
+    /**
+     * Repara enlaces simbólicos críticos del rootfs usr-merge.
+     */
+    fun repairCriticalSymlinks(rootfsDir: File): Boolean {
+        val symlinks = mapOf(
+            "bin" to "usr/bin",
+            "sbin" to "usr/sbin",
+            "lib" to "usr/lib",
+            "lib64" to "usr/lib64"
+        )
+        var repaired = false
+        symlinks.forEach { (link, target) ->
+            val symFile = File(rootfsDir, link)
+            val targetDir = File(rootfsDir, target)
+            if (!targetDir.exists()) {
+                DebugLogger.w("RootfsManager", "Cannot repair $link: target $target does not exist")
+                return@forEach
+            }
+            try {
+                if (symFile.exists()) {
+                    java.nio.file.Files.delete(symFile.toPath())
+                }
+                android.system.Os.symlink(target, symFile.absolutePath)
+                DebugLogger.i("RootfsManager", "Repaired symlink $link -> $target")
+                repaired = true
+            } catch (e: Exception) {
+                DebugLogger.e("RootfsManager", "Failed to repair symlink $link -> $target", e)
+            }
+        }
+        return repaired
+    }
+
+    internal fun fixRootfsPermissions(rootfsDir: File) {
         val criticalBinaries = listOf(
             "bin/sh",
             "bin/bash",
@@ -335,6 +405,44 @@ object RootfsManager {
         }
     }
 
+    /**
+     * Diagnostica el binario PRoot: permisos, ELF válido, tamaño.
+     * Devuelve un mapa con resultados de diagnóstico.
+     */
+    fun diagnosePRootBinary(context: Context): Map<String, Any> {
+        val result = mutableMapOf<String, Any>()
+        try {
+            val prootFile = TerminalConfig.getPRootExecutable(context)
+            result["path"] = prootFile.absolutePath
+            result["exists"] = prootFile.exists()
+            if (prootFile.exists()) {
+                result["size"] = prootFile.length()
+                result["executable"] = prootFile.canExecute()
+                result["readable"] = prootFile.canRead()
+
+                // Check ELF magic bytes
+                val magic = ByteArray(4)
+                try {
+                    java.io.FileInputStream(prootFile).use { it.read(magic) }
+                    val isElf = magic[0] == 0x7F.toByte() && magic[1] == 'E'.code.toByte() &&
+                            magic[2] == 'L'.code.toByte() && magic[3] == 'F'.code.toByte()
+                    result["isElf"] = isElf
+                    if (!isElf) {
+                        DebugLogger.e("RootfsManager", "PRoot binary is not a valid ELF: ${prootFile.absolutePath}")
+                    }
+                } catch (e: Exception) {
+                    result["isElf"] = false
+                    result["elfError"] = e.message ?: "unknown"
+                }
+            }
+            DebugLogger.i("RootfsManager", "PRoot binary diagnostic: $result")
+        } catch (e: Exception) {
+            result["error"] = e.message ?: "unknown"
+            DebugLogger.e("RootfsManager", "PRoot binary diagnostic failed", e)
+        }
+        return result
+    }
+
     fun diagnosePermissions(context: Context) {
         val rootfsDir = TerminalConfig.getRootfsDir(context)
         val criticalPaths = listOf(
@@ -404,7 +512,13 @@ object RootfsManager {
     customTmp.setReadable(true, false)
 
     fixRootfsPermissions(rootfsDir)
-    
+
+    // Verificar y reparar enlaces simbólicos usr-merge de Debian
+    val brokenSymlinks = verifyCriticalSymlinks(rootfsDir)
+    if (brokenSymlinks.isNotEmpty()) {
+        repairCriticalSymlinks(rootfsDir)
+    }
+
     // NOTA: el marcador .installed se crea en MainActivity DESPUÉS de la validación
     }
 }

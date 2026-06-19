@@ -57,14 +57,44 @@ open class TerminalBridge(
     override fun onSessionFinished(finishedSession: TerminalSession) {
         val exitStatus = finishedSession.exitStatus
         val isRunning = finishedSession.isRunning
-        DebugLogger.i("TerminalBridge", "Session finished: ${finishedSession.title}. isRunning=$isRunning, exitStatus=$exitStatus")
+        val diagnosis = diagnoseExitCode(exitStatus)
+        DebugLogger.i("TerminalBridge", "Session finished: title=${finishedSession.title}. isRunning=$isRunning, exitStatus=$exitStatus, diagnosis=$diagnosis")
+        if (exitStatus != 0) {
+            DebugLogger.e("TerminalBridge", "Session exited with code $exitStatus ($diagnosis)")
+        }
         com.estrin217.terminal.core.logger.DiagnosticPipeline.postLog(
             component = com.estrin217.terminal.core.logger.SystemComponent.PROOT_CORE,
             severity = if (exitStatus == 0) com.estrin217.terminal.core.logger.LogSeverity.INFO
                        else com.estrin217.terminal.core.logger.LogSeverity.ERROR,
-            message = { "Session finished: title=${finishedSession.title}, isRunning=$isRunning, exitStatus=$exitStatus, pid=$shellPid" }
+            message = { "Session finished: title=${finishedSession.title}, isRunning=$isRunning, exitStatus=$exitStatus, diagnosis=$diagnosis, pid=$shellPid" }
         )
     }
+
+    private fun diagnoseExitCode(exitCode: Int): String {
+        if (exitCode == 0) return "SUCCESS"
+        if (exitCode > 0) {
+            return when (exitCode) {
+                1 -> "EXEC_FAILURE: execvp() failed (binary not found or not executable)"
+                255 -> "PTY_SLAVE_OPEN_FAILURE: Cannot open slave PTY (/dev/pts/*). Check SELinux, /dev/pts mount, or permissions."
+                else -> "PROCESS_EXIT: Child process exited with code $exitCode"
+            }
+        }
+        // Negative: killed by signal
+        val signal = -exitCode
+        val signalName = when (signal) {
+            1 -> "SIGHUP"
+            2 -> "SIGINT"
+            3 -> "SIGQUIT"
+            6 -> "SIGABRT"
+            9 -> "SIGKILL"
+            11 -> "SIGSEGV"
+            15 -> "SIGTERM"
+            31 -> "SIGSYS (seccomp violation)"
+            else -> "SIGNAL($signal)"
+        }
+        return "KILLED_BY_SIGNAL: $signalName"
+    }
+
 
     override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager

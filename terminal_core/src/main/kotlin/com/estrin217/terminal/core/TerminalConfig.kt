@@ -52,7 +52,7 @@ object TerminalConfig {
             "PATH=/usr/bin:/bin:/usr/sbin:/sbin",
             "USER=programador",
             "LOGNAME=programador",
-            "LANG=es_VE.UTF-8",
+            "LANG=${java.util.Locale.getDefault().toLanguageTag()}.UTF-8",
             "PROOT_TMP_DIR=$rootfsTmpDir",
             "PROOT_NO_SECCOMP=1",
         )

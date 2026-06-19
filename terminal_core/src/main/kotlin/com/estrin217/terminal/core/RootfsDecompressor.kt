@@ -25,6 +25,15 @@ object RootfsDecompressor {
 
     private external fun nativeExtractTar(fd: Int, destDir: String): Boolean
 
+    /**
+     * Verifica si la extracción nativa (libarchive/bsdtar via JNI) está disponible
+     * sin intentar una extracción completa. Útil para diagnóstico previo.
+     */
+    fun isNativeExtractionAvailable(): Boolean {
+        ensureNativeLoaded()
+        return nativeLoaded
+    }
+
     suspend fun extractDebianRootfs(
         context: Context,
         tarballSource: File,

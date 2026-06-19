@@ -40,8 +40,21 @@ static int create_subprocess(JNIEnv* env,
         jint cell_width,
         jint cell_height)
 {
+    // Create a pipe to capture early child stderr (before PTY slave is opened).
+    // This helps diagnose failures before the PTY is established.
+    int early_stderr_pipe[2];
+    int pipe_ok = pipe(early_stderr_pipe);
+    if (pipe_ok != 0) {
+        LOGE("Failed to create early stderr pipe: errno=%d (%s)", errno, strerror(errno));
+        early_stderr_pipe[0] = -1;
+        early_stderr_pipe[1] = -1;
+    }
+
     int ptm = open("/dev/ptmx", O_RDWR | O_CLOEXEC);
-    if (ptm < 0) return throw_runtime_exception(env, "Cannot open /dev/ptmx");
+    if (ptm < 0) {
+        if (pipe_ok == 0) { close(early_stderr_pipe[0]); close(early_stderr_pipe[1]); }
+        return throw_runtime_exception(env, "Cannot open /dev/ptmx");
+    }
 
 #ifdef LACKS_PTSNAME_R
     char* devname;
@@ -55,6 +68,7 @@ static int create_subprocess(JNIEnv* env,
             ptsname_r(ptm, devname, sizeof(devname))
 #endif
        ) {
+        if (pipe_ok == 0) { close(early_stderr_pipe[0]); close(early_stderr_pipe[1]); }
         return throw_runtime_exception(env, "Cannot grantpt()/unlockpt()/ptsname_r() on /dev/ptmx");
     }
 
@@ -71,11 +85,30 @@ static int create_subprocess(JNIEnv* env,
 
     pid_t pid = fork();
     if (pid < 0) {
+        if (pipe_ok == 0) { close(early_stderr_pipe[0]); close(early_stderr_pipe[1]); }
         return throw_runtime_exception(env, "Fork failed");
     } else if (pid > 0) {
+        // Parent: close the write end of pipe, read any early stderr from child
+        if (pipe_ok == 0) {
+            close(early_stderr_pipe[1]);
+            char child_err[4096];
+            ssize_t n = read(early_stderr_pipe[0], child_err, sizeof(child_err) - 1);
+            if (n > 0) {
+                child_err[n] = '\0';
+                LOGE("Early child stderr before PTY: %s", child_err);
+            }
+            close(early_stderr_pipe[0]);
+        }
         *pProcessId = (int) pid;
         return ptm;
     } else {
+        // Child: redirect stderr to the pipe for early diagnostics
+        if (pipe_ok == 0) {
+            close(early_stderr_pipe[0]);
+            dup2(early_stderr_pipe[1], 2);
+            close(early_stderr_pipe[1]);
+        }
+
         LOGI("Child process started, pid=%d, devname=%s", getpid(), devname);
 
         // Clear signals which the Android java process may have blocked:
@@ -90,10 +123,15 @@ static int create_subprocess(JNIEnv* env,
         int pts = open(devname, O_RDWR);
         if (pts < 0) {
             LOGE("Failed to open slave PTY '%s': errno=%d (%s)", devname, errno, strerror(errno));
-            exit(-1);
+            // Now we are exiting before PTY is established, but we already redirected
+            // stderr to the pipe, so the parent will see this error message.
+            fprintf(stderr, "FATAL: Cannot open slave PTY %s: errno=%d (%s)\n", devname, errno, strerror(errno));
+            fflush(stderr);
+            _exit(255);  // 255 = PTY slave open failure
         }
-        LOGI("Slave PTY opened successfully: pts=%d", pts);
+        LOGD("Slave PTY opened successfully: pts=%d", pts);
 
+        // Redirect stderr back to the PTY slave (fd 2 was the pipe, now it's the PTY)
         dup2(pts, 0);
         dup2(pts, 1);
         dup2(pts, 2);
@@ -114,7 +152,6 @@ static int create_subprocess(JNIEnv* env,
 
         if (chdir(cwd) != 0) {
             char* error_message;
-            // No need to free asprintf()-allocated memory since doing execvp() or exit() below.
             if (asprintf(&error_message, "chdir(\"%s\")", cwd) == -1) error_message = const_cast<char*>("chdir()");
             perror(error_message);
             fflush(stderr);
@@ -125,9 +162,8 @@ static int create_subprocess(JNIEnv* env,
 
         // Show terminal output about failing exec() call:
         LOGE("execvp failed for cmd=%s: errno=%d (%s)", cmd, errno, strerror(errno));
-        char* error_message;
-        if (asprintf(&error_message, "exec(\"%s\")", cmd) == -1) error_message = const_cast<char*>("exec()");
-        perror(error_message);
+        fprintf(stderr, "FATAL: execvp failed for %s: errno=%d (%s)\n", cmd, errno, strerror(errno));
+        fflush(stderr);
         _exit(1);
     }
 }

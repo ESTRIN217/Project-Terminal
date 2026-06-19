@@ -67,8 +67,45 @@ class TerminalService : Service() {
         return binder
     }
 
+    private fun validatePRootBinary(context: Context): Boolean {
+        val prootFile = TerminalConfig.getPRootExecutable(context)
+        if (!prootFile.exists()) {
+            DebugLogger.e("TerminalService", "PRoot binary not found: ${prootFile.absolutePath}")
+            return false
+        }
+        if (!prootFile.canExecute()) {
+            DebugLogger.w("TerminalService", "PRoot binary not executable, fixing: ${prootFile.absolutePath}")
+            prootFile.setExecutable(true, false)
+        }
+        if (!prootFile.canExecute()) {
+            DebugLogger.e("TerminalService", "PRoot binary cannot be made executable: ${prootFile.absolutePath}")
+            return false
+        }
+        // Check ELF magic bytes
+        try {
+            val magic = ByteArray(4)
+            java.io.FileInputStream(prootFile).use { it.read(magic) }
+            val isElf = magic[0] == 0x7F.toByte() && magic[1] == 'E'.code.toByte() &&
+                    magic[2] == 'L'.code.toByte() && magic[3] == 'F'.code.toByte()
+            if (!isElf) {
+                DebugLogger.e("TerminalService", "PRoot binary is not a valid ELF file: ${prootFile.absolutePath}")
+                return false
+            }
+        } catch (e: Exception) {
+            DebugLogger.e("TerminalService", "Failed to validate PRoot binary ELF header", e)
+            return false
+        }
+        DebugLogger.i("TerminalService", "PRoot binary validated: ${prootFile.absolutePath} (${prootFile.length()} bytes)")
+        return true
+    }
+
     fun createOrGetSession(context: Context, bridge: TerminalBridge): TerminalSession {
         currentSession?.let { return it }
+
+        // Validate PRoot binary before attempting to launch
+        if (!validatePRootBinary(context)) {
+            DebugLogger.e("TerminalService", "PRoot binary validation failed - session will fail")
+        }
 
         val rootfsTmp = File(TerminalConfig.getRootfsDir(context), "tmp")
         if (!rootfsTmp.exists()) {
@@ -84,9 +121,18 @@ class TerminalService : Service() {
         val args = TerminalConfig.getPRootArgs(context, "/bin/sh")
         val env = TerminalConfig.getEnvironmentVariables(context)
 
+        // Log full command line for debugging
         DebugLogger.i("TerminalService", "Creating session: shellPath=$shellPath, cwd=$cwd")
         args.forEachIndexed { i, arg -> DebugLogger.d("TerminalService", "  args[$i]=\"$arg\"") }
         env.forEach { e -> DebugLogger.d("TerminalService", "  env: $e") }
+
+        // Validate rootfs shell exists before launching
+        val rootfsDir = TerminalConfig.getRootfsDir(context)
+        val binSh = File(File(rootfsDir, "bin"), "sh")
+        val usrBinSh = File(File(rootfsDir, "usr/bin"), "sh")
+        if (!binSh.exists() && !usrBinSh.exists()) {
+            DebugLogger.e("TerminalService", "No shell found in rootfs (checked bin/sh, usr/bin/sh). Rootfs may be corrupted.")
+        }
 
         val session = TerminalSession(
             shellPath,
