@@ -107,12 +107,34 @@ class TerminalService : Service() {
         return newSession(context, bridge)
     }
 
+    /**
+     * Resuelve el shell real dentro del rootfs probando varias rutas conocidas.
+     */
+    private fun resolveShellCommand(rootfsDir: File): String {
+        val candidates = listOf(
+            "/bin/bash", "/usr/bin/bash",
+            "/bin/sh", "/usr/bin/sh",
+            "/bin/dash", "/usr/bin/dash",
+            "/bin/ash", "/usr/bin/ash"
+        )
+        for (shell in candidates) {
+            val shellFile = File(rootfsDir, shell.removePrefix("/"))
+            if (shellFile.exists() && shellFile.canExecute()) {
+                DebugLogger.i("TerminalService", "Resolved shell: $shell")
+                return shell
+            }
+        }
+        DebugLogger.w("TerminalService", "No shell found in rootfs, falling back to /bin/sh")
+        return "/bin/sh"
+    }
+
     fun newSession(context: Context, bridge: TerminalBridge): TerminalSession {
         if (!validatePRootBinary(context)) {
             DebugLogger.e("TerminalService", "PRoot binary validation failed - session will fail")
         }
 
-        val rootfsTmp = File(TerminalConfig.getRootfsDir(context), "tmp")
+        val rootfsDir = TerminalConfig.getRootfsDir(context)
+        val rootfsTmp = File(rootfsDir, "tmp")
         if (!rootfsTmp.exists()) {
             rootfsTmp.mkdirs()
             DebugLogger.w("TerminalService", "PROOT_TMP_DIR did not exist, created: ${rootfsTmp.absolutePath}")
@@ -121,21 +143,15 @@ class TerminalService : Service() {
         rootfsTmp.setExecutable(true, false)
         rootfsTmp.setReadable(true, false)
 
+        val shellCmd = resolveShellCommand(rootfsDir)
         val shellPath = TerminalConfig.getPRootExecutable(context).absolutePath
         val cwd = context.filesDir.absolutePath
-        val args = TerminalConfig.getPRootArgs(context, "/bin/sh")
+        val args = TerminalConfig.getPRootArgs(context, shellCmd)
         val env = TerminalConfig.getEnvironmentVariables(context)
 
-        DebugLogger.i("TerminalService", "Creating session: shellPath=$shellPath, cwd=$cwd")
+        DebugLogger.i("TerminalService", "Creating session: shellPath=$shellPath, shellCmd=$shellCmd, cwd=$cwd")
         args.forEachIndexed { i, arg -> DebugLogger.d("TerminalService", "  args[$i]=\"$arg\"") }
         env.forEach { e -> DebugLogger.d("TerminalService", "  env: $e") }
-
-        val rootfsDir = TerminalConfig.getRootfsDir(context)
-        val binSh = File(File(rootfsDir, "bin"), "sh")
-        val usrBinSh = File(File(rootfsDir, "usr/bin"), "sh")
-        if (!binSh.exists() && !usrBinSh.exists()) {
-            DebugLogger.e("TerminalService", "No shell found in rootfs (checked bin/sh, usr/bin/sh). Rootfs may be corrupted.")
-        }
 
         val session = TerminalSession(
             shellPath,

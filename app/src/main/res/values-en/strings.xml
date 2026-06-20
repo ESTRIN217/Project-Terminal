@@ -27,4 +27,8 @@
     <string name="retry_download">Retry Download</string>
     <string name="clear_cache">Clear Cache</string>
     <string name="close">Close</string>
+    <string name="terminal_error_title">Terminal session error</string>
+    <string name="terminal_error_desc">The terminal session ended unexpectedly (exit code %s). This may be due to incorrect permissions or a PRoot failure.</string>
+    <string name="repair_permissions">Repair permissions</string>
+    <string name="retry_session">Retry session</string>
 </resources>

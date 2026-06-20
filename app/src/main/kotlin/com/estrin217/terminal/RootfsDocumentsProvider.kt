@@ -41,10 +41,10 @@ class RootfsDocumentsProvider : DocumentsProvider() {
             add(DocumentsContract.Root.COLUMN_TITLE, "Linux Rootfs")
             add(DocumentsContract.Root.COLUMN_SUMMARY, "Rootfs del contenedor Linux")
             add(DocumentsContract.Root.COLUMN_MIME_TYPES, "*/*")
-            add(DocumentsContract.Root.COLUMN_AVAILABLE_QUOTAS, DocumentsContract.Root.QUOTA_NOT_RESOLVED)
+            add(DocumentsContract.Root.COLUMN_AVAILABLE_BYTES, -1L)
             add(DocumentsContract.Root.COLUMN_FLAGS, DocumentsContract.Root.FLAG_SUPPORTS_IS_CHILD or
                     DocumentsContract.Root.FLAG_LOCAL_ONLY)
-            add(DocumentsContract.Root.COLUMN_ICON, android.R.drawable.ic_menu_folder)
+            add(DocumentsContract.Root.COLUMN_ICON, android.R.drawable.ic_menu_manage)
         }
         DebugLogger.i("RootfsDocumentsProvider", "queryRoots: returning 1 root")
         return cursor
@@ -176,8 +176,7 @@ class RootfsDocumentsProvider : DocumentsProvider() {
                     DocumentsContract.Document.FLAG_SUPPORTS_DELETE
         } else {
             flags = flags or DocumentsContract.Document.FLAG_SUPPORTS_WRITE or
-                    DocumentsContract.Document.FLAG_SUPPORTS_DELETE or
-                    DocumentsContract.Document.FLAG_SUPPORTS_READ
+                    DocumentsContract.Document.FLAG_SUPPORTS_DELETE
         }
         return flags
     }

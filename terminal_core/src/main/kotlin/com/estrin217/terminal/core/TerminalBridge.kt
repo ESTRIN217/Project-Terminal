@@ -54,6 +54,8 @@ open class TerminalBridge(
         DebugLogger.i("TerminalBridge", "Title changed: ${changedSession.title}")
     }
 
+    var onSessionFinishedListener: ((exitStatus: Int) -> Unit)? = null
+
     override fun onSessionFinished(finishedSession: TerminalSession) {
         val exitStatus = finishedSession.exitStatus
         val isRunning = finishedSession.isRunning
@@ -68,6 +70,7 @@ open class TerminalBridge(
                        else com.estrin217.terminal.core.logger.LogSeverity.ERROR,
             message = { "Session finished: title=${finishedSession.title}, isRunning=$isRunning, exitStatus=$exitStatus, diagnosis=$diagnosis, pid=$shellPid" }
         )
+        onSessionFinishedListener?.invoke(exitStatus)
     }
 
     private fun diagnoseExitCode(exitCode: Int): String {

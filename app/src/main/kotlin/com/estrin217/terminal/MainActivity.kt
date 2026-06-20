@@ -47,6 +47,7 @@ class MainActivity : ComponentActivity() {
     private val altActiveState = mutableStateOf(false)
     private val showErrorDialogState = mutableStateOf(false)
     private val errorMessageState = mutableStateOf("")
+    private val sessionExitCodeState = mutableStateOf<Int?>(null)
 
     enum class Tab(val label: String) { TERMINAL("Terminal"), FILES("Files"), SETTINGS("Settings") }
     private val selectedTab = mutableStateOf(Tab.TERMINAL)
@@ -400,6 +401,7 @@ class MainActivity : ComponentActivity() {
                             activeId = activeId,
                             isInstalling = isInstalling,
                             progressText = progressText,
+                            sessionExitCode = sessionExitCodeState.value,
                             controlActiveState = controlActiveState,
                             altActiveState = altActiveState,
                             onBridgeCreated = { bridge ->
@@ -410,6 +412,11 @@ class MainActivity : ComponentActivity() {
                                     }
                                     override fun onAltKeyConsumed() {
                                         altActiveState.value = false
+                                    }
+                                }
+                                bridge.onSessionFinishedListener = { exitCode ->
+                                    if (exitCode != 0) {
+                                        sessionExitCodeState.value = exitCode
                                     }
                                 }
                                 ensureDefaultSession()
@@ -423,6 +430,21 @@ class MainActivity : ComponentActivity() {
                                 val session = service.getSession(id) ?: return@TerminalTabContent
                                 state.attachSession(session)
                                 DebugLogger.i(TAG, "Switched to session: $id")
+                            },
+                            onRetrySession = {
+                                sessionExitCodeState.value = null
+                                startAndBindService()
+                            },
+                            onRepairPermissions = {
+                                sessionExitCodeState.value = null
+                                Thread {
+                                    val rootfsDir = TerminalConfig.getRootfsDir(context)
+                                    RootfsManager.fixRootfsPermissions(rootfsDir)
+                                    RootfsManager.ensureLoaderPermissions(context)
+                                    runOnUiThread {
+                                        startAndBindService()
+                                    }
+                                }.start()
                             },
                             onNavigateToLogger = {
                                 DebugLogger.i(TAG, "Navigating to LoggerActivity")
@@ -608,12 +630,15 @@ class MainActivity : ComponentActivity() {
         activeId: String?,
         isInstalling: Boolean,
         progressText: String,
+        sessionExitCode: Int?,
         controlActiveState: MutableState<Boolean>,
         altActiveState: MutableState<Boolean>,
         onBridgeCreated: (TerminalBridge) -> Unit,
         onAddSession: () -> Unit,
         onCloseSession: (String) -> Unit,
         onSwitchSession: (String) -> Unit,
+        onRetrySession: () -> Unit,
+        onRepairPermissions: () -> Unit,
         onNavigateToLogger: () -> Unit,
         onPickRootfs: () -> Unit
     ) {
@@ -719,6 +744,75 @@ class MainActivity : ComponentActivity() {
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                 )
+                            }
+                        }
+                    }
+                }
+
+                // Error state overlay for session failure (MD3 Card with icon)
+                val exitCode = sessionExitCode
+                if (exitCode != null && !isInstalling) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xE6121212)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.padding(20.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.ErrorOutline,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                                Text(
+                                    text = LocaleManager.getString("terminal_error_title"),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Text(
+                                    text = LocaleManager.getString("terminal_error_desc", exitCode.toString()),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    FilledTonalButton(
+                                        onClick = onRepairPermissions
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Build,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(LocaleManager.getString("repair_permissions"))
+                                    }
+                                    Button(
+                                        onClick = onRetrySession
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Refresh,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(LocaleManager.getString("retry_session"))
+                                    }
+                                }
                             }
                         }
                     }

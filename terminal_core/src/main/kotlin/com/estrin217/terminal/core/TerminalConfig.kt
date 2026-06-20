@@ -45,38 +45,18 @@ object TerminalConfig {
     }
 
     fun getEnvironmentVariables(context: Context): Array<String> {
-        val rootfsTmpDir = File(getRootfsDir(context), "tmp").absolutePath
-        return arrayOf(
-            "TERM=xterm-256color",
-            "HOME=/home/programador",
-            "PATH=/usr/bin:/bin:/usr/sbin:/sbin",
-            "USER=programador",
-            "LOGNAME=programador",
-            "LANG=${java.util.Locale.getDefault().toLanguageTag()}.UTF-8",
-            "PROOT_TMP_DIR=$rootfsTmpDir",
-            "PROOT_NO_SECCOMP=1",
-        )
+        return PRootCommandBuilder.defaultEnv(context)
     }
 
+    /**
+     * Construye los argumentos de PRoot con mejores prácticas para Android 10+:
+     * - --link2symlink: convierten enlaces simbólicos en enlaces físicos para
+     *   evitar restricciones de SELinux en el almacenamiento interno.
+     * - -b /dev/pts: montaje explícito de pseudo-terminales para PTY.
+     */
     fun getPRootArgs(context: Context, shellCmd: String = "/bin/sh"): Array<String> {
-        val rootfsPath = getRootfsDir(context).absolutePath
-        val prootExe = getPRootExecutable(context).absolutePath
-
-        // Argumentos para aislar rutas usando PRoot:
-        // -r <rootfs>: define el nuevo directorio raíz
-        // -0: emula ser root (opcional, pero útil)
-        // -b /dev -b /proc -b /sys: monta directorios del sistema de Android
-        // -w /home/programador: establece el directorio de trabajo inicial
-        return arrayOf(
-            prootExe,
-            "-r", rootfsPath,
-            "-0",
-            "-b", "/dev",
-            "-b", "/proc",
-            "-b", "/sys",
-            "-b", "/data/data/${context.packageName}:/data_priv",
-            "-w", "/home/programador",
-            shellCmd
-        )
+        return PRootCommandBuilder.create(context)
+            .setShellCommand(shellCmd)
+            .buildArgs()
     }
 }

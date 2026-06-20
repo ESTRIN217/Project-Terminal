@@ -309,43 +309,62 @@ object RootfsManager {
         return repaired
     }
 
-    internal fun fixRootfsPermissions(rootfsDir: File) {
-        val criticalBinaries = listOf(
-            "bin/sh",
-            "bin/bash",
-            "usr/bin/sh",
-            "usr/bin/bash"
+    fun fixRootfsPermissions(rootfsDir: File) {
+        val fixedCount = ensureCriticalPermissions(rootfsDir)
+
+        val shells = listOf("bin/sh", "bin/bash", "bin/dash", "bin/ash",
+            "usr/bin/sh", "usr/bin/bash", "usr/bin/dash", "usr/bin/ash")
+        shells.forEach { relPath ->
+            val shellFile = File(rootfsDir, relPath)
+            if (!shellFile.exists() && java.nio.file.Files.isSymbolicLink(shellFile.toPath())) {
+                recreateBrokenSymlink(shellFile, rootfsDir)
+            }
+        }
+
+        if (fixedCount > 0) {
+            com.estrin217.terminal.core.logger.DebugLogger.i("RootfsManager", "Fixed $fixedCount files with execute permissions")
+        }
+    }
+
+    /**
+     * Recorre recursivamente los directorios críticos (bin, sbin, usr/bin,
+     * usr/sbin, usr/libexec, lib, lib64) y fuerza el bit de ejecución
+     * en todos los archivos regulares. También repara linkers dinámicos
+     * y bibliotecas compartidas en todo el rootfs.
+     *
+     * Esta función es el reemplazo DRY de fixLoaderPermissions + fixRootfsPermissions.
+     */
+    internal fun ensureCriticalPermissions(rootfsDir: File): Int {
+        var count = 0
+        val criticalPrefixes = setOf(
+            "bin/", "sbin/",
+            "usr/bin/", "usr/sbin/", "usr/libexec/",
+            "lib/", "lib64/",
+            "usr/lib/", "usr/lib64/"
         )
 
-        criticalBinaries.forEach { relPath ->
-            val binFile = File(rootfsDir, relPath)
-
-            if (!binFile.exists() && java.nio.file.Files.isSymbolicLink(binFile.toPath())) {
-                recreateBrokenSymlink(binFile, rootfsDir)
-            }
-
-            if (binFile.exists()) {
-                binFile.setExecutable(true, false)
-                binFile.setReadable(true, false)
-            }
-        }
-
-        // Buscar y reparar linkers dinámicos (ld-linux-*, ld.so.*) en todo el rootfs
         rootfsDir.walkTopDown().forEach { file ->
-            if (file.isFile) {
-                val name = file.name
-                if (name.startsWith("ld-linux") || name.startsWith("ld.so")) {
-                    if (!file.canExecute()) {
-                        file.setExecutable(true, false)
-                        file.setReadable(true, false)
-                        com.estrin217.terminal.core.logger.DebugLogger.i(
-                            "RootfsManager",
-                            "Fixed linker permissions: ${file.relativeTo(rootfsDir).path}"
-                        )
-                    }
-                }
+            if (!file.isFile) return@forEach
+
+            val relPath = file.relativeTo(rootfsDir).path
+            val name = file.name
+
+            val needsExec = criticalPrefixes.any { relPath.startsWith(it) } ||
+                    name.endsWith(".so") ||
+                    name.contains(".so.") ||
+                    name.endsWith(".sh") ||
+                    name.startsWith("ld-linux") ||
+                    name.startsWith("ld.so") ||
+                    name.startsWith("libpthread") ||
+                    name.startsWith("libc.")
+
+            if (needsExec && !file.canExecute()) {
+                file.setExecutable(true, false)
+                file.setReadable(true, false)
+                count++
             }
         }
+        return count
     }
 
     private fun recreateBrokenSymlink(symlink: File, rootfsDir: File) {

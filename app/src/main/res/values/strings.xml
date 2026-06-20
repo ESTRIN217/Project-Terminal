@@ -27,4 +27,8 @@
     <string name="retry_download">Reintentar descarga</string>
     <string name="clear_cache">Limpiar caché</string>
     <string name="close">Cerrar</string>
+    <string name="terminal_error_title">Error en la sesión de terminal</string>
+    <string name="terminal_error_desc">La sesión de la terminal finalizó inesperadamente (código %s). Esto puede deberse a permisos incorrectos o a un fallo de PRoot.</string>
+    <string name="repair_permissions">Reparar permisos</string>
+    <string name="retry_session">Reintentar sesión</string>
 </resources>

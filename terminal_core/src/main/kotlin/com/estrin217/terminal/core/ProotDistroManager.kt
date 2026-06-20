@@ -128,57 +128,23 @@ object ProotDistroManager {
      * Cada distro puede necesitar bind mounts adicionales.
      */
     fun getPRootArgs(context: Context, distroId: String, shellCmd: String = "/bin/sh"): Array<String> {
-        val config = getDistroOrThrow(distroId)
-        val rootfsPath = File(TerminalConfig.getRootfsDir(context), distroId).absolutePath
-        val prootExe = TerminalConfig.getPRootExecutable(context).absolutePath
-
-        val baseArgs = mutableListOf(
-            prootExe,
-            "-r", rootfsPath,
-            "-0",
-            "-b", "/dev",
-            "-b", "/proc",
-            "-b", "/sys",
-            "-b", "/data/data/${context.packageName}:/data_priv",
-            "-w", "/home/programador"
-        )
-
-        when (config.id) {
-            "alpine" -> {
-                baseArgs.add("-b")
-                baseArgs.add("/etc/resolv.conf:/etc/resolv.conf")
-            }
-        }
-
-        baseArgs.add(shellCmd)
-        return baseArgs.toTypedArray()
+        val distroRootfs = File(TerminalConfig.getRootfsDir(context), distroId)
+        return PRootCommandBuilder.create(context)
+            .setRootfsDir(distroRootfs)
+            .setShellCommand(shellCmd)
+            .setDistroId(distroId)
+            .buildArgs()
     }
 
     /**
      * Obtiene las variables de entorno específicas de la distribución.
      */
     fun getEnvironmentVariables(context: Context, distroId: String): Array<String> {
-        val config = getDistroOrThrow(distroId)
-        val rootfsDir = TerminalConfig.getRootfsDir(context)
-        val distroRootfs = File(rootfsDir, distroId)
-        val rootfsTmpDir = File(distroRootfs, "tmp").absolutePath
-
-        val env = mutableListOf(
-            "TERM=xterm-256color",
-            "HOME=/home/programador",
-            "PATH=/usr/bin:/bin:/usr/sbin:/sbin",
-            "USER=programador",
-            "LOGNAME=programador",
-            "PROOT_TMP_DIR=$rootfsTmpDir",
-            "PROOT_NO_SECCOMP=1"
-        )
-
-        when (config.id) {
-            "debian", "ubuntu" -> env.add("LANG=${java.util.Locale.getDefault().toLanguageTag()}.UTF-8")
-            "alpine" -> env.add("LANG=C.UTF-8")
-        }
-
-        return env.toTypedArray()
+        val distroRootfs = File(TerminalConfig.getRootfsDir(context), distroId)
+        return PRootCommandBuilder.create(context)
+            .setRootfsDir(distroRootfs)
+            .setDistroId(distroId)
+            .buildEnv()
     }
 
     /**
